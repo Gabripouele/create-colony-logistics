@@ -1,0 +1,12 @@
+{
+  "required": true,
+  "minVersion": "0.8",
+  "package": "com.createcolonylogistics.mixin",
+  "compatibilityLevel": "JAVA_21",
+  "mixins": [
+    "PackagerBlockEntityMixin"
+  ],
+  "injectors": {
+    "defaultRequire": 1
+  }
+}
