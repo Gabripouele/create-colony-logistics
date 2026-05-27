@@ -14,7 +14,7 @@ public final class SmartClipboardClient {
     }
 
     public static void open(SmartClipboardReport report) {
-        // Legacy packet path retained for network compatibility; the Smart Clipboard now opens through a menu.
+        Minecraft.getInstance().setScreen(new SmartClipboardScreen(report));
     }
 
     static boolean openMineColoniesClipboard() {
