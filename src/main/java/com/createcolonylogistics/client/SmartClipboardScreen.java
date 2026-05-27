@@ -32,7 +32,7 @@ public class SmartClipboardScreen extends Screen {
     // StockKeeperRequestScreen uses itemsX = guiLeft + ((windowWidth - 180) / 2) + 1 and a 180px item area.
     private static final int LIST_X = 39;
     private static final int LIST_WIDTH = 180;
-    private static final int LIST_TOP = 48;
+    private static final int LIST_TOP = 62;
     private static final int LIST_BOTTOM = 294;
     private static final int SCROLL_X = 219;
     private static final int ROW_GAP = 2;
@@ -42,6 +42,8 @@ public class SmartClipboardScreen extends Screen {
     private static final int EXPANDED_TOP_PADDING = 34;
     private static final int EXPANDED_BOTTOM_PADDING = 8;
     private static final int BORDER = 0xFF714A40;
+    private static final int HEADER_TEXT = 0xFF4A2D11;
+    private static final int SEPARATOR = 0xAA3C2412;
     // Create stock keeper uses no-shadow text; rows follow Clerk's bright primary / muted secondary hierarchy.
     private static final int TEXT = 0xFFFFFFFF;
     private static final int MUTED = 0xFFB7A98D;
@@ -90,15 +92,14 @@ public class SmartClipboardScreen extends Screen {
         graphics.fill(0, 0, width, height, 0x99000000);
         renderStockKeeperPanel(graphics);
 
-        graphics.drawString(font, truncate(title, 196), leftPos + 22, topPos + 8, TEXT, false);
-        Component subtitle = Component.translatable(
-                "screen.create_colony_logistics.smart_clipboard.subtitle",
-                report.colonyName(),
-                report.colonyId(),
+        graphics.drawString(font, truncate(title, 166), leftPos + 22, topPos + 8, HEADER_TEXT, false);
+        graphics.drawString(font, truncate(Component.literal(report.colonyName()), LIST_WIDTH), leftPos + LIST_X, topPos + 37, MUTED, false);
+        graphics.drawString(font, truncate(Component.translatable(
+                "screen.create_colony_logistics.smart_clipboard.summary",
                 report.activeRequestCount(),
                 report.buildingCount()
-        );
-        graphics.drawString(font, truncate(subtitle, LIST_WIDTH), leftPos + LIST_X, topPos + 37, MUTED, false);
+        ), LIST_WIDTH), leftPos + LIST_X, topPos + 49, DIM, false);
+        graphics.fill(leftPos + LIST_X, topPos + LIST_TOP - 3, leftPos + LIST_X + LIST_WIDTH, topPos + LIST_TOP - 2, SEPARATOR);
 
         int listTop = topPos + LIST_TOP;
         int listBottom = topPos + LIST_BOTTOM;
@@ -160,7 +161,7 @@ public class SmartClipboardScreen extends Screen {
     }
 
     private void renderEntry(GuiGraphics graphics, SmartClipboardReport.Entry entry, int index, int x, int y, int width, int height, int mouseX, int mouseY) {
-        graphics.fill(x, y + height - 1, x + width, y + height, 0x66735A38);
+        graphics.fill(x, y + height - 1, x + width, y + height, SEPARATOR);
 
         graphics.renderItem(entry.requestedStack(), x + 2, y + 4);
         graphics.renderItemDecorations(font, entry.requestedStack(), x + 2, y + 4);
@@ -390,7 +391,37 @@ public class SmartClipboardScreen extends Screen {
     }
 
     private String shortenHutName(String name) {
-        return name.replace(" Hut", "").replace("Building ", "");
+        return humanizeHutName(name);
+    }
+
+    private String humanizeHutName(String name) {
+        if (name == null || name.isBlank()) {
+            return Component.translatable("screen.create_colony_logistics.smart_clipboard.unknown_hut").getString();
+        }
+        String value = name.replaceAll("\\bcom\\.minecolonies[^\\s,;)]*", "");
+        int colon = value.lastIndexOf(':');
+        if (colon >= 0) {
+            value = value.substring(colon + 1);
+        }
+        int slash = value.lastIndexOf('/');
+        if (slash >= 0) {
+            value = value.substring(slash + 1);
+        }
+        int dot = value.lastIndexOf('.');
+        if (dot >= 0) {
+            value = value.substring(dot + 1);
+        }
+        value = value.replaceAll("(?i)\\b(building|build|module|crafting|hut)\\b", " ");
+        value = value.replaceAll("[_\\-{}\\[\\]().:]+", " ").trim();
+        if (value.isBlank()) {
+            return Component.translatable("screen.create_colony_logistics.smart_clipboard.unknown_hut").getString();
+        }
+        String[] words = value.split("\\s+");
+        String chosen = words[0];
+        if (words.length > 1 && chosen.matches("\\d+")) {
+            chosen = words[1];
+        }
+        return Character.toUpperCase(chosen.charAt(0)) + chosen.substring(1).toLowerCase(Locale.ROOT);
     }
 
     private String humanizeDomumShape(SmartClipboardReport.Entry entry) {
