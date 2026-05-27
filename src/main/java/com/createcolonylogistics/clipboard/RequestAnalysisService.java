@@ -399,35 +399,34 @@ public final class RequestAnalysisService {
     }
 
     private static Optional<String> workerName(IBuilding building, IRequestManager manager, IRequest<?> request) {
-        if (building == null) {
-            return Optional.empty();
-        }
-        Optional<String> directWorker = workerName(building, request.getId());
-        if (directWorker.isPresent()) {
-            return directWorker;
-        }
+        if (building != null) {
+            Optional<String> directWorker = workerName(building, request.getId());
+            if (directWorker.isPresent()) {
+                return directWorker;
+            }
 
-        // MineColonies often assigns the citizen to the parent builder/order request, while material or crafting child
-        // requests keep only the parent token. For display parity, inherit only from that explicit request parent chain.
-        IRequest<?> current = request;
-        for (int depth = 0; depth < 16; depth++) {
-            try {
-                if (!current.hasParent()) {
-                    return Optional.empty();
+            // MineColonies often assigns the citizen to the parent builder/order request, while material or crafting child
+            // requests keep only the parent token. For display parity, inherit only from that explicit request parent chain.
+            IRequest<?> current = request;
+            for (int depth = 0; depth < 16; depth++) {
+                try {
+                    if (!current.hasParent()) {
+                        break;
+                    }
+                    current = manager.getRequestForToken(current.getParent());
+                    if (current == null) {
+                        break;
+                    }
+                    Optional<String> parentWorker = workerName(building, current.getId());
+                    if (parentWorker.isPresent()) {
+                        return parentWorker;
+                    }
+                } catch (RuntimeException ignored) {
+                    break;
                 }
-                current = manager.getRequestForToken(current.getParent());
-                if (current == null) {
-                    return Optional.empty();
-                }
-                Optional<String> parentWorker = workerName(building, current.getId());
-                if (parentWorker.isPresent()) {
-                    return parentWorker;
-                }
-            } catch (RuntimeException ignored) {
-                return Optional.empty();
             }
         }
-        return Optional.empty();
+        return requesterDisplayWorker(manager, request);
     }
 
     private static Optional<String> workerName(IBuilding building, IToken<?> requestToken) {
@@ -436,6 +435,42 @@ public final class RequestAnalysisService {
         } catch (RuntimeException ignored) {
             return Optional.empty();
         }
+    }
+
+    private static Optional<String> requesterDisplayWorker(IRequestManager manager, IRequest<?> request) {
+        try {
+            String displayName = request.getRequester().getRequesterDisplayName(manager, request).getString();
+            if (!isPlayerFacingRequesterDisplay(displayName)) {
+                return Optional.empty();
+            }
+            String worker = displayName.substring(displayName.indexOf(':') + 1).trim();
+            return isPlayerFacingName(worker) ? Optional.of(worker) : Optional.empty();
+        } catch (RuntimeException ignored) {
+            return Optional.empty();
+        }
+    }
+
+    private static boolean isPlayerFacingRequesterDisplay(String value) {
+        if (value == null || value.isBlank() || !value.contains(":")) {
+            return false;
+        }
+        String requester = value.substring(0, value.indexOf(':')).trim();
+        String worker = value.substring(value.indexOf(':') + 1).trim();
+        return isPlayerFacingName(requester) && isPlayerFacingName(worker);
+    }
+
+    private static boolean isPlayerFacingName(String value) {
+        if (value == null || value.isBlank()) {
+            return false;
+        }
+        String lower = value.toLowerCase();
+        return !lower.contains("com.")
+                && !lower.contains("minecolonies")
+                && !lower.contains("request")
+                && !lower.contains("token")
+                && !value.contains("{")
+                && !value.contains("}")
+                && !value.contains("@");
     }
 
     private static boolean isMinimumStockRequest(IRequest<?> request) {
