@@ -18,6 +18,7 @@ import net.minecraft.world.item.ItemStack;
 import java.lang.reflect.Method;
 import java.util.ArrayList;
 import java.util.Collection;
+import java.util.Collections;
 import java.util.Comparator;
 import java.util.LinkedHashMap;
 import java.util.List;
@@ -31,7 +32,7 @@ public final class RequestAnalysisService {
 
     public static AnalysisResult analyze(ServerLevel level, IColony colony, int limit) {
         Map<String, List<RequestReportEntry>> grouped = new LinkedHashMap<>();
-        int relevant = 0;
+        int reported = 0;
         int activeRequestCount = 0;
         boolean capped = false;
 
@@ -41,22 +42,22 @@ public final class RequestAnalysisService {
             for (IRequest<?> request : openRequestsForBuilding(colony, requesterBuilding)) {
                 activeRequestCount++;
                 Optional<ItemStack> requestedStack = requestedStack(request);
-                if (requestedStack.isEmpty() || !DomumOrnamentumRequestInspector.isDomumOrnamentumStack(requestedStack.get())) {
+                if (requestedStack.isEmpty()) {
                     continue;
                 }
 
-                if (relevant >= limit) {
+                if (reported >= limit) {
                     capped = true;
                     continue;
                 }
 
                 RequestReportEntry entry = inspectRequest(level, colony, requesterBuilding, request, requestedStack.get());
                 grouped.computeIfAbsent(entry.requesterName(), ignored -> new ArrayList<>()).add(entry);
-                relevant++;
+                reported++;
             }
         }
 
-        return new AnalysisResult(colony.getName(), colony.getID(), colony.getBuildingManager().getBuildings().size(), activeRequestCount, grouped, relevant, capped);
+        return new AnalysisResult(colony.getName(), colony.getID(), colony.getBuildingManager().getBuildings().size(), activeRequestCount, grouped, reported, capped);
     }
 
     private static Collection<IRequest<?>> openRequestsForBuilding(IColony colony, IBuilding building) {
@@ -104,8 +105,13 @@ public final class RequestAnalysisService {
     }
 
     private static RequestReportEntry inspectRequest(ServerLevel level, IColony colony, IBuilding building, IRequest<?> request, ItemStack requestedStack) {
-        ColonyProductionInspector.ProductionKnowledge knowledge = ColonyProductionInspector.inspect(colony, requestedStack);
-        Optional<ResourceLocation> cutterRecipe = DomumOrnamentumRequestInspector.findCutterRecipe(level.getRecipeManager(), level.registryAccess(), requestedStack);
+        boolean domumRequest = DomumOrnamentumRequestInspector.isDomumOrnamentumStack(requestedStack);
+        ColonyProductionInspector.ProductionKnowledge knowledge = domumRequest
+                ? ColonyProductionInspector.inspect(colony, requestedStack)
+                : new ColonyProductionInspector.ProductionKnowledge(Collections.emptyList(), Collections.emptyList());
+        Optional<ResourceLocation> cutterRecipe = domumRequest
+                ? DomumOrnamentumRequestInspector.findCutterRecipe(level.getRecipeManager(), level.registryAccess(), requestedStack)
+                : Optional.empty();
 
         return new RequestReportEntry(
                 buildingDisplayName(building),

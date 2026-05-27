@@ -21,7 +21,7 @@ import java.lang.reflect.Method;
 import java.util.Optional;
 
 public class SmartColonyClipboardItem extends Item {
-    private static final int MAX_RELEVANT_REQUESTS = 10;
+    private static final int MAX_REPORT_REQUESTS = 25;
 
     public SmartColonyClipboardItem(Properties properties) {
         super(properties);
@@ -54,7 +54,7 @@ public class SmartColonyClipboardItem extends Item {
             return;
         }
 
-        RequestAnalysisService.AnalysisResult result = RequestAnalysisService.analyze(player.serverLevel(), colony.get(), MAX_RELEVANT_REQUESTS);
+        RequestAnalysisService.AnalysisResult result = RequestAnalysisService.analyze(player.serverLevel(), colony.get(), MAX_REPORT_REQUESTS);
         PacketDistributor.sendToPlayer(player, new ClientboundSmartClipboardReportPacket(SmartClipboardReport.fromAnalysis(result)));
     }
 

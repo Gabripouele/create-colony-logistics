@@ -31,9 +31,9 @@ public class SmartClipboardScreen extends Screen {
     private static final int SCROLL_X = 219;
     private static final int ROW_GAP = 2;
     private static final int LINE_HEIGHT = 10;
-    private static final int COLLAPSED_HEIGHT = 31;
-    private static final int EXPANDED_TOP_PADDING = 34;
-    private static final int EXPANDED_BOTTOM_PADDING = 8;
+    private static final int COLLAPSED_HEIGHT = 28;
+    private static final int EXPANDED_TOP_PADDING = 30;
+    private static final int EXPANDED_BOTTOM_PADDING = 6;
     private static final int HEADER_TEXT = 0xFF4A2D11;
     private static final int SEPARATOR = 0xAA3C2412;
     private static final int TEXT = 0xFFFFFFFF;
@@ -144,14 +144,16 @@ public class SmartClipboardScreen extends Screen {
         if (expanded.contains(index)) {
             int detailY = y + EXPANDED_TOP_PADDING;
             detailY = value(graphics, x + 8, detailY, "screen.create_colony_logistics.smart_clipboard.requested", entry.requestedStack().getHoverName().getString() + " x" + entry.requestedCount());
-            detailY = value(graphics, x + 8, detailY, "screen.create_colony_logistics.smart_clipboard.requester", displayRequester(entry));
             detailY = value(graphics, x + 8, detailY, "screen.create_colony_logistics.smart_clipboard.worker", entry.requestingWorkerName().orElse(null));
             detailY = value(graphics, x + 8, detailY, "screen.create_colony_logistics.smart_clipboard.resolver", entry.resolverName().map(this::humanizeResolver).orElse(null));
-            if (entry.requestTree().size() > 1) {
+            List<SmartClipboardReport.RequestTreeNode> dependencies = dependencyNodes(entry);
+            if (!dependencies.isEmpty()) {
                 detailY = label(graphics, x + 8, detailY + 2, "screen.create_colony_logistics.smart_clipboard.needs_label");
-                for (SmartClipboardReport.RequestTreeNode node : entry.requestTree()) {
+                for (SmartClipboardReport.RequestTreeNode node : dependencies) {
                     detailY = treeValue(graphics, x + 8, detailY, node);
                 }
+            } else {
+                detailY = value(graphics, x + 8, detailY + 2, "screen.create_colony_logistics.smart_clipboard.needs", Component.translatable("screen.create_colony_logistics.smart_clipboard.none").getString());
             }
         }
     }
@@ -162,9 +164,9 @@ public class SmartClipboardScreen extends Screen {
         }
         Component label = Component.translatable(key + "_label");
         int maxWidth = Math.max(40, leftPos + LIST_X + LIST_WIDTH - x - 4);
-        graphics.drawString(font, truncate(label, maxWidth), x, y, HEADER_TEXT, false);
+        graphics.drawString(font, truncate(label, maxWidth), x, y, MUTED, false);
         int valueX = x + font.width(label);
-        graphics.drawString(font, truncate(Component.literal(value), Math.max(20, leftPos + LIST_X + LIST_WIDTH - valueX - 4)), valueX, y, MUTED, false);
+        graphics.drawString(font, truncate(Component.literal(value), Math.max(20, leftPos + LIST_X + LIST_WIDTH - valueX - 4)), valueX, y, HEADER_TEXT, false);
         return y + LINE_HEIGHT;
     }
 
@@ -174,7 +176,7 @@ public class SmartClipboardScreen extends Screen {
     }
 
     private int treeValue(GuiGraphics graphics, int x, int y, SmartClipboardReport.RequestTreeNode node) {
-        int indent = Math.min(48, node.depth() * 12);
+        int indent = Math.min(48, Math.max(0, node.depth() - 1) * 12);
         ItemStack stack = node.stack();
         if (!stack.isEmpty()) {
             graphics.renderItem(stack, x + indent, y);
@@ -191,12 +193,14 @@ public class SmartClipboardScreen extends Screen {
         }
         int height = EXPANDED_TOP_PADDING;
         height += valueLineHeight(entry.requestedStack().getHoverName().getString());
-        height += valueLineHeight(displayRequester(entry));
         height += valueLineHeight(entry.requestingWorkerName().orElse(null));
         height += valueLineHeight(entry.resolverName().orElse(null));
-        if (entry.requestTree().size() > 1) {
+        List<SmartClipboardReport.RequestTreeNode> dependencies = dependencyNodes(entry);
+        if (!dependencies.isEmpty()) {
             height += LINE_HEIGHT + 2;
-            height += entry.requestTree().size() * 18;
+            height += dependencies.size() * 18;
+        } else {
+            height += LINE_HEIGHT + 2;
         }
         return height + EXPANDED_BOTTOM_PADDING;
     }
@@ -265,6 +269,9 @@ public class SmartClipboardScreen extends Screen {
         Minecraft minecraft = Minecraft.getInstance();
         Item.TooltipContext context = minecraft.level == null ? Item.TooltipContext.EMPTY : Item.TooltipContext.of(minecraft.level);
         List<Component> lines = new ArrayList<>(entry.requestedStack().getTooltipLines(context, minecraft.player, TooltipFlag.NORMAL));
+        if (!isDomumOrnamentumEntry(entry)) {
+            return lines;
+        }
         lines.add(Component.empty());
         lines.add(Component.translatable("screen.create_colony_logistics.smart_clipboard.tooltip.smart")
                 .withStyle(style -> style.withColor(SMART_INFO_HEADER_COLOR)));
@@ -329,6 +336,12 @@ public class SmartClipboardScreen extends Screen {
 
     private int valueLineHeight(String value) {
         return value == null || value.isBlank() ? 0 : LINE_HEIGHT;
+    }
+
+    private List<SmartClipboardReport.RequestTreeNode> dependencyNodes(SmartClipboardReport.Entry entry) {
+        return entry.requestTree().stream()
+                .filter(node -> node.depth() > 0)
+                .toList();
     }
 
     private List<Integer> filteredEntryIndexes() {
@@ -420,6 +433,10 @@ public class SmartClipboardScreen extends Screen {
 
     private String humanizeDomumShape(SmartClipboardReport.Entry entry) {
         return humanizeResourcePath(entry.doBlockId());
+    }
+
+    private boolean isDomumOrnamentumEntry(SmartClipboardReport.Entry entry) {
+        return entry.doBlockId().startsWith("domum_ornamentum:");
     }
 
     private String humanizeDimension(String id) {
