@@ -31,6 +31,7 @@
   "screen.create_colony_logistics.smart_clipboard.filter_label": "View: ",
   "screen.create_colony_logistics.smart_clipboard.filter_all": "All requests",
   "screen.create_colony_logistics.smart_clipboard.filter_important": "Important",
+  "screen.create_colony_logistics.smart_clipboard.toggle_important": "Toggle Important Requests",
   "screen.create_colony_logistics.smart_clipboard.item_count": "%s x%s",
   "screen.create_colony_logistics.smart_clipboard.known_short": "Known: %s",
   "screen.create_colony_logistics.smart_clipboard.can_learn_short": "Can learn: %s",
