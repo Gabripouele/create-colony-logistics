@@ -77,6 +77,7 @@ public final class DomumOrnamentumRequestInspector {
     }
 
     private static Optional<RecipeHolder<?>> findCutterRecipeHolder(RecipeManager recipeManager, HolderLookup.Provider provider, ItemStack requestedStack) {
+        Optional<RecipeHolder<?>> compatibleMatch = Optional.empty();
         try {
             for (RecipeHolder<?> holder : recipeManager.getRecipes()) {
                 ResourceLocation typeId = BuiltInRegistries.RECIPE_TYPE.getKey(holder.value().getType());
@@ -85,14 +86,22 @@ public final class DomumOrnamentumRequestInspector {
                 boolean cutterPath = holder.id().getNamespace().equals(DOMUM_ORNAMENTUM)
                         && holder.id().getPath().contains(ARCHITECTS_CUTTER);
 
-                if ((cutterType || cutterPath) && ItemStack.isSameItemSameComponents(holder.value().getResultItem(provider), requestedStack)) {
+                if (!cutterType && !cutterPath) {
+                    continue;
+                }
+
+                ItemStack result = holder.value().getResultItem(provider);
+                if (ItemStack.isSameItemSameComponents(result, requestedStack)) {
                     return Optional.of(holder);
+                }
+                if (compatibleMatch.isEmpty() && !result.isEmpty() && itemId(result).equals(itemId(requestedStack))) {
+                    compatibleMatch = Optional.of(holder);
                 }
             }
         } catch (RuntimeException ignored) {
             return Optional.empty();
         }
-        return Optional.empty();
+        return compatibleMatch;
     }
 
     public record IngredientRequirement(ItemStack stack, int count) {

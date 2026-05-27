@@ -214,9 +214,13 @@ public final class RequestAnalysisService {
         Optional<ResourceLocation> cutterRecipe = domumRequest
                 ? DomumOrnamentumRequestInspector.findCutterRecipe(level.getRecipeManager(), level.registryAccess(), requestedStack)
                 : Optional.empty();
-        List<RequestTreeNode> tree = domumRequest
-                ? cutterRequirementTree(level, requestedStack)
-                : requestTree(colony.getRequestManager(), request, 0, 16);
+        List<RequestTreeNode> tree = requestTree(colony.getRequestManager(), request, 0, 16);
+        if (domumRequest) {
+            List<RequestTreeNode> cutterTree = cutterRequirementTree(level, requestedStack);
+            if (!cutterTree.isEmpty()) {
+                tree = cutterTree;
+            }
+        }
 
         return new RequestReportEntry(
                 requesterDisplayName(colony.getRequestManager(), request, building),
@@ -438,6 +442,25 @@ public final class RequestAnalysisService {
     }
 
     private static Optional<String> requesterDisplayWorker(IRequestManager manager, IRequest<?> request) {
+        IRequest<?> current = request;
+        for (int depth = 0; current != null && depth < 16; depth++) {
+            Optional<String> worker = requesterDisplayWorkerForRequest(manager, current);
+            if (worker.isPresent()) {
+                return worker;
+            }
+            try {
+                if (!current.hasParent()) {
+                    break;
+                }
+                current = manager.getRequestForToken(current.getParent());
+            } catch (RuntimeException ignored) {
+                break;
+            }
+        }
+        return Optional.empty();
+    }
+
+    private static Optional<String> requesterDisplayWorkerForRequest(IRequestManager manager, IRequest<?> request) {
         try {
             String displayName = request.getRequester().getRequesterDisplayName(manager, request).getString();
             if (!isPlayerFacingRequesterDisplay(displayName)) {
