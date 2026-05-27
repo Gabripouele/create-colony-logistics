@@ -30,7 +30,8 @@ public class SmartClipboardScreen extends Screen {
     private static final int LIST_BOTTOM = 294;
     private static final int SCROLL_X = 219;
     private static final int IMPORTANT_BUTTON_SIZE = 11;
-    private static final int TREE_INDENT = 9;
+    private static final int TREE_INDENT = 8;
+    private static final int TREE_ROW_HEIGHT = 18;
     private static final int ROW_GAP = 2;
     private static final int LINE_HEIGHT = 10;
     private static final int COLLAPSED_HEIGHT = 28;
@@ -47,6 +48,7 @@ public class SmartClipboardScreen extends Screen {
 
     private final SmartClipboardReport report;
     private final Set<Integer> expanded = new HashSet<>();
+    private final Set<String> expandedDependencies = new HashSet<>();
     private int leftPos;
     private int topPos;
     private int scroll;
@@ -175,11 +177,10 @@ public class SmartClipboardScreen extends Screen {
             detailY = value(graphics, x + 8, detailY, "screen.create_colony_logistics.smart_clipboard.resolver", entry.resolverName().map(this::humanizeResolver).orElse(null));
             List<SmartClipboardReport.RequestTreeNode> dependencies = dependencyNodes(entry);
             if (!dependencies.isEmpty()) {
-                for (SmartClipboardReport.RequestTreeNode node : dependencies) {
-                    detailY = treeValue(graphics, x + 4, detailY + 2, node);
+                detailY += 2;
+                for (int nodeIndex : visibleDependencyIndexes(entry, index)) {
+                    detailY = dependencyValue(graphics, x + 4, detailY, entry, index, nodeIndex);
                 }
-            } else {
-                detailY = value(graphics, x + 8, detailY + 2, "screen.create_colony_logistics.smart_clipboard.needs", Component.translatable("screen.create_colony_logistics.smart_clipboard.none").getString());
             }
         }
     }
@@ -208,29 +209,24 @@ public class SmartClipboardScreen extends Screen {
         return y + LINE_HEIGHT;
     }
 
-    private int treeValue(GuiGraphics graphics, int x, int y, SmartClipboardReport.RequestTreeNode node) {
+    private int dependencyValue(GuiGraphics graphics, int x, int y, SmartClipboardReport.Entry entry, int entryIndex, int nodeIndex) {
+        List<SmartClipboardReport.RequestTreeNode> dependencies = dependencyNodes(entry);
+        SmartClipboardReport.RequestTreeNode node = dependencies.get(nodeIndex);
         int visibleDepth = Math.max(1, node.depth());
         int indent = Math.min(36, (visibleDepth - 1) * TREE_INDENT);
-        renderTreeConnectors(graphics, x, y, visibleDepth, indent);
+        boolean expandable = hasDependencyChildren(dependencies, nodeIndex);
+        boolean expanded = expandedDependencies.contains(dependencyKey(entryIndex, nodeIndex));
+        String marker = expandable ? (expanded ? "v" : ">") : "-";
+        graphics.drawString(font, marker, x + indent, y + 4, HEADER_TEXT, false);
+
         ItemStack stack = node.stack();
         if (!stack.isEmpty()) {
-            graphics.renderItem(stack, x + indent + 7, y);
+            graphics.renderItem(stack, x + indent + 9, y);
         }
         String label = treeNodeText(node);
-        graphics.drawString(font, truncate(Component.literal(label), Math.max(40, leftPos + LIST_X + LIST_WIDTH - x - indent - 27)),
-                x + indent + 26, y + 4, MUTED, false);
-        return y + 18;
-    }
-
-    private void renderTreeConnectors(GuiGraphics graphics, int x, int y, int visibleDepth, int indent) {
-        int branchY = y + 8;
-        for (int level = 1; level < visibleDepth; level++) {
-            int lineX = x + Math.min(36, (level - 1) * TREE_INDENT) + 3;
-            graphics.fill(lineX, y, lineX + 1, y + 18, DIM);
-        }
-        int branchX = x + indent + 3;
-        graphics.fill(branchX, y, branchX + 1, branchY + 1, DIM);
-        graphics.fill(branchX, branchY, branchX + 7, branchY + 1, DIM);
+        graphics.drawString(font, truncate(Component.literal(label), Math.max(40, leftPos + LIST_X + LIST_WIDTH - x - indent - 29)),
+                x + indent + 28, y + 4, MUTED, false);
+        return y + TREE_ROW_HEIGHT;
     }
 
     private int entryHeight(SmartClipboardReport.Entry entry, int index) {
@@ -243,9 +239,7 @@ public class SmartClipboardScreen extends Screen {
         height += valueLineHeight(entry.resolverName().orElse(null));
         List<SmartClipboardReport.RequestTreeNode> dependencies = dependencyNodes(entry);
         if (!dependencies.isEmpty()) {
-            height += dependencies.size() * 18;
-        } else {
-            height += LINE_HEIGHT + 2;
+            height += 2 + visibleDependencyIndexes(entry, index).size() * TREE_ROW_HEIGHT;
         }
         return height + EXPANDED_BOTTOM_PADDING;
     }
@@ -267,6 +261,9 @@ public class SmartClipboardScreen extends Screen {
             SmartClipboardReport.Entry entry = report.entries().get(i);
             int cardHeight = entryHeight(entry, i);
             if (mouseX >= x && mouseX <= x + LIST_WIDTH && mouseY >= y && mouseY <= y + cardHeight) {
+                if (expanded.contains(i) && toggleDependencyAt(entry, i, mouseY, y)) {
+                    return true;
+                }
                 toggle(expanded, i);
                 return true;
             }
@@ -381,7 +378,7 @@ public class SmartClipboardScreen extends Screen {
         return Math.max(0, contentHeight - (bottom - top));
     }
 
-    private static void toggle(Set<Integer> set, int value) {
+    private static <T> void toggle(Set<T> set, T value) {
         if (!set.add(value)) {
             set.remove(value);
         }
@@ -395,6 +392,62 @@ public class SmartClipboardScreen extends Screen {
         return entry.requestTree().stream()
                 .filter(node -> node.depth() > 0)
                 .toList();
+    }
+
+    private List<Integer> visibleDependencyIndexes(SmartClipboardReport.Entry entry, int entryIndex) {
+        List<SmartClipboardReport.RequestTreeNode> dependencies = dependencyNodes(entry);
+        List<Integer> visible = new ArrayList<>();
+        for (int i = 0; i < dependencies.size(); i++) {
+            if (isDependencyVisible(dependencies, entryIndex, i)) {
+                visible.add(i);
+            }
+        }
+        return visible;
+    }
+
+    private boolean isDependencyVisible(List<SmartClipboardReport.RequestTreeNode> dependencies, int entryIndex, int nodeIndex) {
+        int depth = dependencies.get(nodeIndex).depth();
+        if (depth <= 1) {
+            return true;
+        }
+        int neededParentDepth = depth - 1;
+        for (int i = nodeIndex - 1; i >= 0 && neededParentDepth >= 1; i--) {
+            int candidateDepth = dependencies.get(i).depth();
+            if (candidateDepth == neededParentDepth) {
+                if (!expandedDependencies.contains(dependencyKey(entryIndex, i))) {
+                    return false;
+                }
+                neededParentDepth--;
+            }
+        }
+        return neededParentDepth < 1;
+    }
+
+    private boolean hasDependencyChildren(List<SmartClipboardReport.RequestTreeNode> dependencies, int nodeIndex) {
+        int depth = dependencies.get(nodeIndex).depth();
+        return nodeIndex + 1 < dependencies.size() && dependencies.get(nodeIndex + 1).depth() > depth;
+    }
+
+    private boolean toggleDependencyAt(SmartClipboardReport.Entry entry, int entryIndex, double mouseY, int rowY) {
+        int y = rowY + EXPANDED_TOP_PADDING;
+        y += valueLineHeight(entry.requestedStack().getHoverName().getString());
+        y += valueLineHeight(entry.requestingWorkerName().orElse(null));
+        y += valueLineHeight(entry.resolverName().orElse(null));
+        y += 2;
+        List<SmartClipboardReport.RequestTreeNode> dependencies = dependencyNodes(entry);
+        for (int nodeIndex : visibleDependencyIndexes(entry, entryIndex)) {
+            int nodeY = y;
+            if (mouseY >= nodeY && mouseY < nodeY + TREE_ROW_HEIGHT && hasDependencyChildren(dependencies, nodeIndex)) {
+                toggle(expandedDependencies, dependencyKey(entryIndex, nodeIndex));
+                return true;
+            }
+            y += TREE_ROW_HEIGHT;
+        }
+        return false;
+    }
+
+    private String dependencyKey(int entryIndex, int nodeIndex) {
+        return entryIndex + ":" + nodeIndex;
     }
 
     private List<Integer> filteredEntryIndexes() {
