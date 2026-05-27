@@ -21,7 +21,7 @@ import java.lang.reflect.Method;
 import java.util.Optional;
 
 public class SmartColonyClipboardItem extends Item {
-    private static final int MAX_REPORT_REQUESTS = 25;
+    private static final int MAX_REPORT_REQUESTS = 250;
 
     public SmartColonyClipboardItem(Properties properties) {
         super(properties);

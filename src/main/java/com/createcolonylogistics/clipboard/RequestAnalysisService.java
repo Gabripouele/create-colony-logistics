@@ -4,6 +4,7 @@ import com.minecolonies.api.colony.ICitizenData;
 import com.minecolonies.api.colony.IColony;
 import com.minecolonies.api.colony.buildings.IBuilding;
 import com.minecolonies.api.colony.buildings.workerbuildings.IWareHouse;
+import com.minecolonies.api.colony.jobs.IJob;
 import com.minecolonies.api.colony.requestsystem.request.IRequest;
 import com.minecolonies.api.colony.requestsystem.request.RequestState;
 import com.minecolonies.api.colony.requestsystem.requestable.IDeliverable;
@@ -24,6 +25,8 @@ import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Map;
 import java.util.Optional;
+import java.util.HashSet;
+import java.util.Set;
 import java.util.function.Predicate;
 
 public final class RequestAnalysisService {
@@ -32,6 +35,7 @@ public final class RequestAnalysisService {
 
     public static AnalysisResult analyze(ServerLevel level, IColony colony, int limit) {
         Map<String, List<RequestReportEntry>> grouped = new LinkedHashMap<>();
+        Set<IToken<?>> lessImportantRequests = lessImportantRequests(colony);
         int reported = 0;
         int activeRequestCount = 0;
         boolean capped = false;
@@ -51,13 +55,28 @@ public final class RequestAnalysisService {
                     continue;
                 }
 
-                RequestReportEntry entry = inspectRequest(level, colony, requesterBuilding, request, requestedStack.get());
+                RequestReportEntry entry = inspectRequest(level, colony, requesterBuilding, request, requestedStack.get(), !lessImportantRequests.contains(request.getId()));
                 grouped.computeIfAbsent(entry.requesterName(), ignored -> new ArrayList<>()).add(entry);
                 reported++;
             }
         }
 
         return new AnalysisResult(colony.getName(), colony.getID(), colony.getBuildingManager().getBuildings().size(), activeRequestCount, grouped, reported, capped);
+    }
+
+    private static Set<IToken<?>> lessImportantRequests(IColony colony) {
+        Set<IToken<?>> requests = new HashSet<>();
+        try {
+            for (ICitizenData citizen : colony.getCitizenManager().getCitizens()) {
+                IJob<?> job = citizen.getJob();
+                if (job != null) {
+                    requests.addAll(job.getAsyncRequests());
+                }
+            }
+        } catch (RuntimeException ignored) {
+            // MineColonies' clipboard treats job async requests as less-important; if unavailable, keep all visible.
+        }
+        return requests;
     }
 
     private static Collection<IRequest<?>> openRequestsForBuilding(IColony colony, IBuilding building) {
@@ -104,7 +123,7 @@ public final class RequestAnalysisService {
         return Optional.empty();
     }
 
-    private static RequestReportEntry inspectRequest(ServerLevel level, IColony colony, IBuilding building, IRequest<?> request, ItemStack requestedStack) {
+    private static RequestReportEntry inspectRequest(ServerLevel level, IColony colony, IBuilding building, IRequest<?> request, ItemStack requestedStack, boolean important) {
         boolean domumRequest = DomumOrnamentumRequestInspector.isDomumOrnamentumStack(requestedStack);
         ColonyProductionInspector.ProductionKnowledge knowledge = domumRequest
                 ? ColonyProductionInspector.inspect(colony, requestedStack)
@@ -121,8 +140,10 @@ public final class RequestAnalysisService {
                 resolverName(colony, request),
                 request.getId().toString(),
                 requestedStack.copy(),
+                displayStacks(request, requestedStack),
                 requestedStack.getHoverName(),
                 requestedStack.getCount(),
+                important,
                 warehouseStock(colony, requestedStack),
                 DomumOrnamentumRequestInspector.itemId(requestedStack),
                 cutterRecipe,
@@ -132,6 +153,27 @@ public final class RequestAnalysisService {
                 knowledge.canLearn(),
                 requestTree(colony.getRequestManager(), request, 0, 16)
         );
+    }
+
+    private static List<ItemStack> displayStacks(IRequest<?> request, ItemStack fallback) {
+        List<ItemStack> stacks = new ArrayList<>();
+        try {
+            for (ItemStack stack : request.getDisplayStacks()) {
+                if (!stack.isEmpty()) {
+                    ItemStack copy = stack.copy();
+                    if (copy.getCount() <= 0) {
+                        copy.setCount(Math.max(1, fallback.getCount()));
+                    }
+                    stacks.add(copy);
+                }
+            }
+        } catch (RuntimeException ignored) {
+            // Fall back to the resolved request stack below.
+        }
+        if (stacks.isEmpty() && !fallback.isEmpty()) {
+            stacks.add(fallback.copy());
+        }
+        return stacks;
     }
 
     private static int warehouseStock(IColony colony, ItemStack requestedStack) {
@@ -253,8 +295,10 @@ public final class RequestAnalysisService {
             Optional<String> resolverName,
             String requestToken,
             ItemStack requestedStack,
+            List<ItemStack> displayStacks,
             Component requestedItemName,
             int requestedCount,
+            boolean important,
             int warehouseStock,
             ResourceLocation domumBlockId,
             Optional<ResourceLocation> cutterRecipe,

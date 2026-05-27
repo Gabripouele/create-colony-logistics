@@ -49,6 +49,7 @@ public class SmartClipboardScreen extends Screen {
     private int topPos;
     private int scroll;
     private int contentHeight;
+    private boolean importantOnly;
 
     public SmartClipboardScreen(SmartClipboardReport report) {
         super(Component.translatable("screen.create_colony_logistics.smart_clipboard.title"));
@@ -92,6 +93,13 @@ public class SmartClipboardScreen extends Screen {
             renderStockKeeperScrollbar(graphics, thumbY, thumbHeight);
         }
 
+        Component filter = Component.translatable(importantOnly
+                ? "screen.create_colony_logistics.smart_clipboard.filter_important"
+                : "screen.create_colony_logistics.smart_clipboard.filter_all");
+        drawLabelValue(graphics, leftPos + LIST_X, topPos + LIST_BOTTOM + 6,
+                Component.translatable("screen.create_colony_logistics.smart_clipboard.filter_label"), filter,
+                LIST_WIDTH);
+
         for (Renderable renderable : renderables) {
             renderable.render(graphics, mouseX, mouseY, partialTick);
         }
@@ -132,14 +140,17 @@ public class SmartClipboardScreen extends Screen {
 
     private void renderEntry(GuiGraphics graphics, SmartClipboardReport.Entry entry, int index, int x, int y, int width, int height) {
         graphics.fill(x, y + height - 1, x + width, y + height, SEPARATOR);
-        graphics.renderItem(entry.requestedStack(), x + 2, y + 4);
-        graphics.renderItemDecorations(font, entry.requestedStack(), x + 2, y + 4);
+        ItemStack shownStack = displayStack(entry);
+        graphics.renderItem(shownStack, x + 2, y + 4);
+        graphics.renderItemDecorations(font, shownStack, x + 2, y + 4);
 
         int textX = x + 24;
         Component name = Component.translatable("screen.create_colony_logistics.smart_clipboard.item_count",
                 entry.requestedStack().getHoverName(), entry.requestedCount());
         graphics.drawString(font, truncate(name, width - 28), textX, y + 3, TEXT, false);
-        graphics.drawString(font, truncate(Component.translatable("screen.create_colony_logistics.smart_clipboard.requester", displayRequester(entry)), width - 28), textX, y + 15, MUTED, false);
+        drawLabelValue(graphics, textX, y + 15,
+                Component.translatable("screen.create_colony_logistics.smart_clipboard.requester_label"),
+                Component.literal(displayRequester(entry)), width - 28);
 
         if (expanded.contains(index)) {
             int detailY = y + EXPANDED_TOP_PADDING;
@@ -164,10 +175,17 @@ public class SmartClipboardScreen extends Screen {
         }
         Component label = Component.translatable(key + "_label");
         int maxWidth = Math.max(40, leftPos + LIST_X + LIST_WIDTH - x - 4);
-        graphics.drawString(font, truncate(label, maxWidth), x, y, MUTED, false);
+        graphics.drawString(font, truncate(label, maxWidth), x, y, HEADER_TEXT, false);
         int valueX = x + font.width(label);
-        graphics.drawString(font, truncate(Component.literal(value), Math.max(20, leftPos + LIST_X + LIST_WIDTH - valueX - 4)), valueX, y, HEADER_TEXT, false);
+        graphics.drawString(font, truncate(Component.literal(value), Math.max(20, leftPos + LIST_X + LIST_WIDTH - valueX - 4)), valueX, y, MUTED, false);
         return y + LINE_HEIGHT;
+    }
+
+    private void drawLabelValue(GuiGraphics graphics, int x, int y, Component label, Component value, int width) {
+        int labelWidth = Math.min(font.width(label), width);
+        graphics.drawString(font, truncate(label, width), x, y, HEADER_TEXT, false);
+        int valueX = x + labelWidth;
+        graphics.drawString(font, truncate(value, Math.max(10, width - labelWidth)), valueX, y, MUTED, false);
     }
 
     private int label(GuiGraphics graphics, int x, int y, String key) {
@@ -208,6 +226,13 @@ public class SmartClipboardScreen extends Screen {
     @Override
     public boolean mouseClicked(double mouseX, double mouseY, int button) {
         int listTop = topPos + LIST_TOP;
+        if (mouseX >= leftPos + LIST_X && mouseX <= leftPos + LIST_X + LIST_WIDTH
+                && mouseY >= topPos + LIST_BOTTOM + 4 && mouseY <= topPos + LIST_BOTTOM + 17) {
+            importantOnly = !importantOnly;
+            scroll = 0;
+            return true;
+        }
+
         int y = listTop - scroll;
         int x = leftPos + LIST_X;
 
@@ -258,17 +283,18 @@ public class SmartClipboardScreen extends Screen {
             SmartClipboardReport.Entry entry = report.entries().get(i);
             int cardHeight = entryHeight(entry, i);
             if (mouseX >= x + 2 && mouseX < x + 18 && mouseY >= y + 4 && mouseY < y + 20) {
-                graphics.renderComponentTooltip(font, buildSmartTooltip(entry), mouseX, mouseY, entry.requestedStack());
+                ItemStack shownStack = displayStack(entry);
+                graphics.renderComponentTooltip(font, buildSmartTooltip(entry, shownStack), mouseX, mouseY, shownStack);
                 return;
             }
             y += cardHeight + ROW_GAP;
         }
     }
 
-    private List<Component> buildSmartTooltip(SmartClipboardReport.Entry entry) {
+    private List<Component> buildSmartTooltip(SmartClipboardReport.Entry entry, ItemStack shownStack) {
         Minecraft minecraft = Minecraft.getInstance();
         Item.TooltipContext context = minecraft.level == null ? Item.TooltipContext.EMPTY : Item.TooltipContext.of(minecraft.level);
-        List<Component> lines = new ArrayList<>(entry.requestedStack().getTooltipLines(context, minecraft.player, TooltipFlag.NORMAL));
+        List<Component> lines = new ArrayList<>(shownStack.getTooltipLines(context, minecraft.player, TooltipFlag.NORMAL));
         if (!isDomumOrnamentumEntry(entry)) {
             return lines;
         }
@@ -347,9 +373,22 @@ public class SmartClipboardScreen extends Screen {
     private List<Integer> filteredEntryIndexes() {
         List<Integer> indexes = new ArrayList<>();
         for (int i = 0; i < report.entries().size(); i++) {
-            indexes.add(i);
+            if (!importantOnly || report.entries().get(i).important()) {
+                indexes.add(i);
+            }
         }
         return indexes;
+    }
+
+    private ItemStack displayStack(SmartClipboardReport.Entry entry) {
+        List<ItemStack> stacks = entry.displayStacks().isEmpty() ? List.of(entry.requestedStack()) : entry.displayStacks();
+        if (stacks.size() == 1) {
+            return stacks.getFirst();
+        }
+        Minecraft minecraft = Minecraft.getInstance();
+        long gameTime = minecraft.level == null ? System.currentTimeMillis() / 50L : minecraft.level.getGameTime();
+        int index = (int) ((gameTime / 20L) % stacks.size());
+        return stacks.get(index);
     }
 
     private String displayRequester(SmartClipboardReport.Entry entry) {

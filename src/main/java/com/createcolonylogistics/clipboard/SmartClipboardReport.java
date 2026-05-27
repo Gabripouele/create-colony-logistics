@@ -21,12 +21,14 @@ public record SmartClipboardReport(
         List<Entry> entries = new ArrayList<>();
         result.groupedEntries().values().forEach(group -> group.forEach(entry -> entries.add(new Entry(
                 entry.requestedStack().copy(),
+                entry.displayStacks().stream().map(ItemStack::copy).toList(),
                 entry.requestedCount(),
                 entry.requesterName(),
                 entry.requesterPosition(),
                 entry.workerName(),
                 entry.dimensionName(),
                 entry.resolverName(),
+                entry.important(),
                 entry.warehouseStock(),
                 entry.domumBlockId().toString(),
                 entry.cutterRecipe().map(Object::toString),
@@ -86,12 +88,14 @@ public record SmartClipboardReport(
 
     public record Entry(
             ItemStack requestedStack,
+            List<ItemStack> displayStacks,
             int requestedCount,
             String requestingBuildingName,
             Optional<BlockPos> requestingBuildingPos,
             Optional<String> requestingWorkerName,
             Optional<String> dimensionName,
             Optional<String> resolverName,
+            boolean important,
             int warehouseStock,
             String doBlockId,
             Optional<String> cutterRecipeId,
@@ -105,12 +109,18 @@ public record SmartClipboardReport(
     ) {
         private static Entry decode(RegistryFriendlyByteBuf buffer) {
             ItemStack requestedStack = ItemStack.OPTIONAL_STREAM_CODEC.decode(buffer);
+            int displayStackCount = buffer.readVarInt();
+            List<ItemStack> displayStacks = new ArrayList<>(displayStackCount);
+            for (int i = 0; i < displayStackCount; i++) {
+                displayStacks.add(ItemStack.OPTIONAL_STREAM_CODEC.decode(buffer));
+            }
             int requestedCount = buffer.readVarInt();
             String requestingBuildingName = buffer.readUtf();
             Optional<BlockPos> requestingBuildingPos = readOptionalBlockPos(buffer);
             Optional<String> requestingWorkerName = readOptionalString(buffer);
             Optional<String> dimensionName = readOptionalString(buffer);
             Optional<String> resolverName = readOptionalString(buffer);
+            boolean important = buffer.readBoolean();
             int warehouseStock = buffer.readVarInt();
             String doBlockId = buffer.readUtf();
             Optional<String> cutterRecipeId = readOptionalString(buffer);
@@ -125,20 +135,25 @@ public record SmartClipboardReport(
             for (int i = 0; i < treeSize; i++) {
                 requestTree.add(RequestTreeNode.decode(buffer));
             }
-            return new Entry(requestedStack, requestedCount, requestingBuildingName, requestingBuildingPos, requestingWorkerName,
-                    dimensionName, resolverName,
+            return new Entry(requestedStack, displayStacks, requestedCount, requestingBuildingName, requestingBuildingPos, requestingWorkerName,
+                    dimensionName, resolverName, important,
                     warehouseStock, doBlockId, cutterRecipeId, comboFingerprintShort, comboFingerprintFull,
                     exactComboAlreadyTaught, recipeKnownBy, canLearnCombo, requestToken, requestTree);
         }
 
         private void encode(RegistryFriendlyByteBuf buffer) {
             ItemStack.OPTIONAL_STREAM_CODEC.encode(buffer, requestedStack);
+            buffer.writeVarInt(displayStacks.size());
+            for (ItemStack displayStack : displayStacks) {
+                ItemStack.OPTIONAL_STREAM_CODEC.encode(buffer, displayStack);
+            }
             buffer.writeVarInt(requestedCount);
             buffer.writeUtf(requestingBuildingName);
             writeOptionalBlockPos(buffer, requestingBuildingPos);
             writeOptionalString(buffer, requestingWorkerName);
             writeOptionalString(buffer, dimensionName);
             writeOptionalString(buffer, resolverName);
+            buffer.writeBoolean(important);
             buffer.writeVarInt(warehouseStock);
             buffer.writeUtf(doBlockId);
             writeOptionalString(buffer, cutterRecipeId);
