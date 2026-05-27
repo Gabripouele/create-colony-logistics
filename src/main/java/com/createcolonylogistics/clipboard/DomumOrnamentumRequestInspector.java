@@ -3,10 +3,12 @@ package com.createcolonylogistics.clipboard;
 import net.minecraft.core.HolderLookup;
 import net.minecraft.core.registries.BuiltInRegistries;
 import net.minecraft.resources.ResourceLocation;
+import net.minecraft.world.item.Item;
 import net.minecraft.world.item.ItemStack;
 import net.minecraft.world.item.crafting.Ingredient;
 import net.minecraft.world.item.crafting.RecipeHolder;
 import net.minecraft.world.item.crafting.RecipeManager;
+import net.minecraft.world.level.block.Block;
 import com.minecolonies.api.colony.requestsystem.request.IRequest;
 
 import java.util.ArrayList;
@@ -23,6 +25,7 @@ public final class DomumOrnamentumRequestInspector {
     private static final String DOMUM_ORNAMENTUM = "domum_ornamentum";
     private static final String ARCHITECTS_CUTTER = "architect";
     private static final Pattern RESOURCE_LOCATION = Pattern.compile("\\b[a-z0-9_.-]+:[a-z0-9_./-]+\\b");
+    private static final Pattern BLOCK_TOKEN = Pattern.compile("Block\\{([a-z0-9_.-]+:[a-z0-9_./-]+)}");
 
     private DomumOrnamentumRequestInspector() {
     }
@@ -65,7 +68,9 @@ public final class DomumOrnamentumRequestInspector {
         ItemStack result = recipe.get().value().getResultItem(provider);
         int outputCount = Math.max(1, result.getCount());
         int crafts = Math.max(1, (requestedStack.getCount() + outputCount - 1) / outputCount);
-        List<ItemStack> materialStacks = materialStacksFromComponents(requestedStack);
+        List<ItemStack> materialStacks = materialCandidatesFromComponents(requestedStack).stream()
+                .flatMap(candidate -> candidate.stack().stream())
+                .toList();
         Map<ResourceLocation, ItemStack> stacks = new LinkedHashMap<>();
         Map<ResourceLocation, Integer> counts = new LinkedHashMap<>();
 
@@ -88,6 +93,14 @@ public final class DomumOrnamentumRequestInspector {
                 stacks.putIfAbsent(itemId, option.copyWithCount(required));
                 counts.merge(itemId, required, Integer::sum);
             }
+            if (stacks.isEmpty() && !materialStacks.isEmpty()) {
+                for (ItemStack materialStack : materialStacks) {
+                    int required = Math.max(1, materialStack.getCount()) * crafts;
+                    ResourceLocation itemId = itemId(materialStack);
+                    stacks.putIfAbsent(itemId, materialStack.copyWithCount(required));
+                    counts.merge(itemId, required, Integer::sum);
+                }
+            }
         } catch (RuntimeException ignored) {
             return List.of();
         }
@@ -102,9 +115,9 @@ public final class DomumOrnamentumRequestInspector {
 
     public static String debugCutterSummary(RecipeManager recipeManager, HolderLookup.Provider provider, ItemStack requestedStack) {
         Optional<RecipeHolder<?>> recipe = findCutterRecipeHolder(recipeManager, provider, requestedStack);
-        List<ItemStack> materials = materialStacksFromComponents(requestedStack);
+        List<MaterialCandidate> materials = materialCandidatesFromComponents(requestedStack);
         String materialSummary = materials.stream()
-                .map(stack -> itemId(stack) + " x" + stack.getCount())
+                .map(MaterialCandidate::debugSummary)
                 .toList()
                 .toString();
         if (recipe.isEmpty()) {
@@ -117,6 +130,7 @@ public final class DomumOrnamentumRequestInspector {
         int outputCount = Math.max(1, result.getCount());
         int crafts = Math.max(1, (requestedStack.getCount() + outputCount - 1) / outputCount);
         int generated = findCutterRequirements(recipeManager, provider, requestedStack).size();
+        String generationSummary = materialGenerationSummary(recipe.get(), provider, requestedStack, materials, crafts);
         return "recipe=" + recipe.get().id()
                 + " output=" + itemId(result)
                 + " outputCount=" + outputCount
@@ -124,6 +138,7 @@ public final class DomumOrnamentumRequestInspector {
                 + " crafts=" + crafts
                 + " materials=" + materialSummary
                 + " generated=" + generated
+                + " materialGeneration=" + generationSummary
                 + " components=" + compactComponentSummary(requestedStack);
     }
 
@@ -155,30 +170,98 @@ public final class DomumOrnamentumRequestInspector {
         return compatibleMatch;
     }
 
-    private static List<ItemStack> materialStacksFromComponents(ItemStack requestedStack) {
-        Set<ResourceLocation> ids = new LinkedHashSet<>();
-        collectMaterialIds(requestedStack.getComponents().toString(), requestedStack, ids);
-        collectMaterialIds(requestedStack.getComponentsPatch().toString(), requestedStack, ids);
-
-        List<ItemStack> stacks = new ArrayList<>();
-        for (ResourceLocation id : ids) {
-            BuiltInRegistries.ITEM.getOptional(id).ifPresent(item -> stacks.add(new ItemStack(item)));
-        }
-        return stacks;
+    private static List<MaterialCandidate> materialCandidatesFromComponents(ItemStack requestedStack) {
+        Map<ResourceLocation, MaterialCandidate> candidates = new LinkedHashMap<>();
+        collectMaterialIds(requestedStack.getComponents().toString(), requestedStack, candidates);
+        collectMaterialIds(requestedStack.getComponentsPatch().toString(), requestedStack, candidates);
+        return new ArrayList<>(candidates.values());
     }
 
-    private static void collectMaterialIds(String data, ItemStack requestedStack, Set<ResourceLocation> ids) {
-        Matcher matcher = RESOURCE_LOCATION.matcher(data);
-        ResourceLocation requestedId = itemId(requestedStack);
-        while (matcher.find()) {
-            ResourceLocation id = ResourceLocation.tryParse(matcher.group());
-            if (id == null || DOMUM_ORNAMENTUM.equals(id.getNamespace()) || requestedId.equals(id)) {
-                continue;
-            }
-            if (BuiltInRegistries.ITEM.containsKey(id)) {
-                ids.add(id);
-            }
+    private static void collectMaterialIds(String data, ItemStack requestedStack, Map<ResourceLocation, MaterialCandidate> candidates) {
+        Matcher blockMatcher = BLOCK_TOKEN.matcher(data);
+        while (blockMatcher.find()) {
+            collectMaterialId("Block{" + blockMatcher.group(1) + "}", blockMatcher.group(1), requestedStack, candidates);
         }
+
+        Matcher matcher = RESOURCE_LOCATION.matcher(data);
+        while (matcher.find()) {
+            collectMaterialId(matcher.group(), matcher.group(), requestedStack, candidates);
+        }
+    }
+
+    private static void collectMaterialId(String rawToken, String idText, ItemStack requestedStack, Map<ResourceLocation, MaterialCandidate> candidates) {
+        ResourceLocation id = ResourceLocation.tryParse(idText);
+        if (id == null) {
+            return;
+        }
+        if (itemId(requestedStack).equals(id) || candidates.containsKey(id)) {
+            return;
+        }
+        candidates.put(id, resolveMaterial(rawToken, id));
+    }
+
+    private static MaterialCandidate resolveMaterial(String rawToken, ResourceLocation id) {
+        Optional<ItemStack> itemStack = BuiltInRegistries.ITEM.getOptional(id)
+                .map(ItemStack::new)
+                .filter(stack -> !stack.isEmpty());
+        if (itemStack.isPresent()) {
+            return new MaterialCandidate(rawToken, id, itemStack, "item", "");
+        }
+
+        Optional<Block> block = BuiltInRegistries.BLOCK.getOptional(id);
+        if (block.isEmpty()) {
+            return new MaterialCandidate(rawToken, id, Optional.empty(), "unresolved", "registry lookup failed");
+        }
+        Item item = block.get().asItem();
+        ItemStack stack = new ItemStack(item);
+        if (stack.isEmpty()) {
+            return new MaterialCandidate(rawToken, id, Optional.empty(), "block", "block has no item form");
+        }
+        return new MaterialCandidate(rawToken, id, Optional.of(stack), "block", "");
+    }
+
+    private static String materialGenerationSummary(RecipeHolder<?> recipe, HolderLookup.Provider provider, ItemStack requestedStack,
+                                                    List<MaterialCandidate> materials, int crafts) {
+        List<Integer> inputCounts = recipeInputCounts(recipe);
+        List<String> lines = new ArrayList<>();
+        for (int i = 0; i < materials.size(); i++) {
+            MaterialCandidate material = materials.get(i);
+            int baseCount = i < inputCounts.size()
+                    ? inputCounts.get(i)
+                    : material.stack().map(ItemStack::getCount).orElse(1);
+            int scaledCount = Math.max(1, baseCount) * crafts;
+            lines.add(material.debugSummary()
+                    + " baseCount=" + baseCount
+                    + " scaledCount=" + scaledCount
+                    + " generated=" + material.stack().isPresent()
+                    + (material.skipReason().isBlank() ? "" : " skip=" + material.skipReason()));
+        }
+        if (lines.isEmpty()) {
+            lines.add("no material components found");
+        }
+        if (recipe.value().getResultItem(provider).isEmpty()) {
+            lines.add("recipe output count unavailable");
+        }
+        return lines.toString();
+    }
+
+    private static List<Integer> recipeInputCounts(RecipeHolder<?> recipe) {
+        List<Integer> counts = new ArrayList<>();
+        try {
+            for (Ingredient ingredient : recipe.value().getIngredients()) {
+                if (ingredient == null || ingredient.isEmpty()) {
+                    continue;
+                }
+                ItemStack[] options = ingredient.getItems();
+                if (options.length == 0 || options[0].isEmpty()) {
+                    continue;
+                }
+                counts.add(Math.max(1, options[0].getCount()));
+            }
+        } catch (RuntimeException ignored) {
+            // Debug-only detail; an empty list falls back to material stack counts.
+        }
+        return counts;
     }
 
     private static String compactComponentSummary(ItemStack stack) {
@@ -187,5 +270,16 @@ public final class DomumOrnamentumRequestInspector {
     }
 
     public record IngredientRequirement(ItemStack stack, int count) {
+    }
+
+    private record MaterialCandidate(String rawToken, ResourceLocation id, Optional<ItemStack> stack, String resolution, String skipReason) {
+        String debugSummary() {
+            return "{raw=" + rawToken
+                    + ", id=" + id
+                    + ", resolvedAs=" + resolution
+                    + ", stack=" + stack.map(value -> value.getHoverName().getString()).orElse("none")
+                    + (skipReason.isBlank() ? "" : ", skip=" + skipReason)
+                    + "}";
+        }
     }
 }
