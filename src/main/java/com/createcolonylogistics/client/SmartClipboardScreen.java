@@ -4,6 +4,7 @@ import com.createcolonylogistics.clipboard.SmartClipboardReport;
 import net.minecraft.ChatFormatting;
 import net.minecraft.client.gui.GuiGraphics;
 import net.minecraft.client.gui.components.Button;
+import net.minecraft.client.gui.components.EditBox;
 import net.minecraft.client.gui.components.Renderable;
 import net.minecraft.client.gui.screens.Screen;
 import net.minecraft.core.BlockPos;
@@ -11,29 +12,32 @@ import net.minecraft.network.chat.Component;
 import net.minecraft.resources.ResourceLocation;
 
 import java.util.HashSet;
+import java.util.ArrayList;
 import java.util.List;
+import java.util.Locale;
 import java.util.Optional;
 import java.util.Set;
 
 public class SmartClipboardScreen extends Screen {
-    private static final ResourceLocation CREATE_CLIPBOARD_TEXTURE = ResourceLocation.fromNamespaceAndPath("create", "textures/gui/clipboard.png");
-    // Measured from Create 6.0.6: ClipboardScreen#setWindowSize(256, 256), rendered with clipboard.png at guiTop - 8.
+    private static final ResourceLocation STOCK_KEEPER_TEXTURE = ResourceLocation.fromNamespaceAndPath("create", "textures/gui/stock_keeper.png");
+    // Measured from Create 6.0.6 StockKeeperRequestScreen/AllGuiTextures.
     private static final int IMAGE_WIDTH = 256;
-    private static final int IMAGE_HEIGHT = 256;
-    private static final int TEXTURE_TOP_OFFSET = -8;
-    // Create clipboard entries occupy the parchment column around x + 44..214 and y + 50..229 on the texture.
-    private static final int LIST_X = 44;
-    private static final int LIST_WIDTH = 170;
-    private static final int LIST_TOP = 42;
-    private static final int LIST_BOTTOM = 218;
-    private static final int SCROLL_X = 218;
+    private static final int IMAGE_HEIGHT = 316;
+    private static final int HEADER_HEIGHT = 36;
+    private static final int BODY_HEIGHT = 20;
+    private static final int BOTTOM_HEIGHT = 20;
+    private static final int LIST_X = 22;
+    private static final int LIST_WIDTH = 202;
+    private static final int LIST_TOP = 48;
+    private static final int LIST_BOTTOM = 294;
+    private static final int SCROLL_X = 230;
     private static final int ROW_GAP = 3;
     private static final int LINE_HEIGHT = 11;
-    private static final int COLLAPSED_HEIGHT = 34;
-    private static final int EXPANDED_TOP_PADDING = 34;
+    private static final int COLLAPSED_HEIGHT = 44;
+    private static final int EXPANDED_TOP_PADDING = 46;
     private static final int EXPANDED_BOTTOM_PADDING = 8;
-    private static final int CARD = 0x20F7E3B0;
-    private static final int CARD_HOVER = 0x45FFFFFF;
+    private static final int CARD = 0x18F7E3B0;
+    private static final int CARD_HOVER = 0x35FFFFFF;
     private static final int BORDER = 0xFF8A5D2A;
     private static final int TEXT = 0xFF311A00;
     private static final int MUTED = 0xFF6E5330;
@@ -43,6 +47,7 @@ public class SmartClipboardScreen extends Screen {
     private final SmartClipboardReport report;
     private final Set<Integer> expanded = new HashSet<>();
     private final Set<Integer> advanced = new HashSet<>();
+    private EditBox searchBox;
     private int leftPos;
     private int topPos;
     private int scroll;
@@ -57,29 +62,38 @@ public class SmartClipboardScreen extends Screen {
     protected void init() {
         leftPos = (width - IMAGE_WIDTH) / 2;
         topPos = (height - IMAGE_HEIGHT) / 2;
+        searchBox = new EditBox(font, leftPos + 71, topPos + 22, 100, 9,
+                Component.translatable("screen.create_colony_logistics.smart_clipboard.search"));
+        searchBox.setMaxLength(50);
+        searchBox.setBordered(false);
+        searchBox.setTextColor(0x4A2D11);
+        searchBox.setHint(Component.translatable("screen.create_colony_logistics.smart_clipboard.search"));
+        searchBox.setResponder(ignored -> scroll = 0);
+        addWidget(searchBox);
+
         addRenderableWidget(Button.builder(
-                Component.translatable("screen.create_colony_logistics.smart_clipboard.open_minecolonies"),
+                Component.translatable("screen.create_colony_logistics.smart_clipboard.open_minecolonies_short"),
                 button -> {
                     if (!SmartClipboardClient.openMineColoniesClipboard()) {
                         button.setMessage(Component.translatable("screen.create_colony_logistics.smart_clipboard.open_minecolonies_missing"));
                     }
                 }
-        ).bounds(leftPos + 134, topPos + 226, 96, 20).build());
+        ).bounds(leftPos + 176, topPos + 18, 48, 18).build());
     }
 
     @Override
     public void render(GuiGraphics graphics, int mouseX, int mouseY, float partialTick) {
         graphics.fill(0, 0, width, height, 0x99000000);
-        graphics.blit(CREATE_CLIPBOARD_TEXTURE, leftPos, topPos + TEXTURE_TOP_OFFSET, 0, 0, IMAGE_WIDTH, IMAGE_HEIGHT);
+        renderStockKeeperPanel(graphics);
 
-        graphics.drawString(font, title, leftPos + LIST_X, topPos + 12, TEXT, false);
+        graphics.drawString(font, title, leftPos + 22, topPos + 8, TEXT, false);
         graphics.drawString(font, Component.translatable(
                 "screen.create_colony_logistics.smart_clipboard.subtitle",
                 report.colonyName(),
                 report.colonyId(),
                 report.activeRequestCount(),
                 report.buildingCount()
-        ), leftPos + LIST_X, topPos + 25, MUTED, false);
+        ), leftPos + LIST_X, topPos + 37, MUTED, false);
 
         int listTop = topPos + LIST_TOP;
         int listBottom = topPos + LIST_BOTTOM;
@@ -89,14 +103,12 @@ public class SmartClipboardScreen extends Screen {
         graphics.disableScissor();
 
         if (contentHeight > listBottom - listTop) {
-            int trackTop = listTop;
+            int trackTop = listTop + 2;
             int trackHeight = listBottom - listTop;
             int thumbHeight = Math.max(18, trackHeight * trackHeight / contentHeight);
             int maxScroll = maxScroll(listTop, listBottom);
             int thumbY = trackTop + (maxScroll == 0 ? 0 : scroll * (trackHeight - thumbHeight) / maxScroll);
-            // Stock keeper screens use a very narrow Create-style handle; keep this textureless but equally compact.
-            graphics.fill(leftPos + SCROLL_X, trackTop, leftPos + SCROLL_X + 3, listBottom, 0x33735A38);
-            graphics.fill(leftPos + SCROLL_X - 1, thumbY, leftPos + SCROLL_X + 4, thumbY + thumbHeight, BORDER);
+            renderStockKeeperScrollbar(graphics, thumbY, thumbHeight);
         }
 
         // Do not call Screen#render here: vanilla starts by rendering a blurred background,
@@ -104,22 +116,27 @@ public class SmartClipboardScreen extends Screen {
         for (Renderable renderable : renderables) {
             renderable.render(graphics, mouseX, mouseY, partialTick);
         }
+        searchBox.render(graphics, mouseX, mouseY, partialTick);
     }
 
     private int renderEntries(GuiGraphics graphics, int mouseX, int mouseY, int listTop, int listBottom) {
         int x = leftPos + LIST_X;
         int y = listTop - scroll;
         int cardWidth = LIST_WIDTH;
+        List<Integer> visibleIndexes = filteredEntryIndexes();
 
-        if (report.entries().isEmpty()) {
-            graphics.drawString(font, Component.translatable("screen.create_colony_logistics.smart_clipboard.empty"), x, y + 12, MUTED, false);
+        if (visibleIndexes.isEmpty()) {
+            Component empty = report.entries().isEmpty()
+                    ? Component.translatable("screen.create_colony_logistics.smart_clipboard.empty")
+                    : Component.translatable("screen.create_colony_logistics.smart_clipboard.no_search_results");
+            graphics.drawString(font, truncate(empty, cardWidth), x, y + 12, MUTED, false);
             if (report.capped()) {
                 graphics.drawString(font, Component.translatable("screen.create_colony_logistics.smart_clipboard.capped"), x, y + 26, WARN, false);
             }
             return 48;
         }
 
-        for (int i = 0; i < report.entries().size(); i++) {
+        for (int i : visibleIndexes) {
             SmartClipboardReport.Entry entry = report.entries().get(i);
             int cardHeight = entryHeight(entry, i);
             if (y + cardHeight >= listTop && y <= listBottom) {
@@ -141,21 +158,22 @@ public class SmartClipboardScreen extends Screen {
         graphics.fill(x, y, x + width, y + height, hovered ? CARD_HOVER : CARD);
         graphics.fill(x, y + height - 1, x + width, y + height, 0x66735A38);
 
-        graphics.renderItem(entry.requestedStack(), x + 4, y + 6);
-        graphics.renderItemDecorations(font, entry.requestedStack(), x + 4, y + 6);
+        graphics.renderItem(entry.requestedStack(), x + 6, y + 7);
+        graphics.renderItemDecorations(font, entry.requestedStack(), x + 6, y + 7);
 
         Component status = entry.exactComboAlreadyTaught()
                 ? Component.translatable("screen.create_colony_logistics.smart_clipboard.yes")
                 : Component.translatable("screen.create_colony_logistics.smart_clipboard.no");
-        int textX = x + 26;
+        int textX = x + 30;
         Component name = Component.translatable("screen.create_colony_logistics.smart_clipboard.item_count",
                 entry.requestedStack().getHoverName(), entry.requestedCount());
-        graphics.drawString(font, truncate(name, width - 30), textX, y + 5, TEXT, false);
+        graphics.drawString(font, truncate(name, width - 34), textX, y + 5, TEXT, false);
 
         Component known = Component.translatable("screen.create_colony_logistics.smart_clipboard.known_short", status);
         int knownX = x + width - font.width(known) - 4;
-        graphics.drawString(font, known, knownX, y + 17, entry.exactComboAlreadyTaught() ? GOOD : WARN, false);
-        graphics.drawString(font, truncate(Component.literal(entry.requestingBuildingName()), Math.max(20, knownX - textX - 4)), textX, y + 17, MUTED, false);
+        graphics.drawString(font, known, knownX, y + 18, entry.exactComboAlreadyTaught() ? GOOD : WARN, false);
+        graphics.drawString(font, truncate(Component.literal(entry.requestingBuildingName()), Math.max(20, knownX - textX - 4)), textX, y + 18, MUTED, false);
+        graphics.drawString(font, Component.translatable("screen.create_colony_logistics.smart_clipboard.can_learn_short", countLabel(entry.canLearnCombo())), textX, y + 30, MUTED, false);
 
         if (expanded.contains(index)) {
             int detailY = y + EXPANDED_TOP_PADDING;
@@ -168,20 +186,6 @@ public class SmartClipboardScreen extends Screen {
             detailY = value(graphics, x + 14, detailY, "screen.create_colony_logistics.smart_clipboard.material", humanizeMaterial(entry));
             detailY = value(graphics, x + 14, detailY, "screen.create_colony_logistics.smart_clipboard.known_by", formatHutList(entry.recipeKnownBy()));
             detailY = value(graphics, x + 14, detailY, "screen.create_colony_logistics.smart_clipboard.can_learn", formatHutList(entry.canLearnCombo()));
-
-            Component advancedLabel = Component.translatable(advanced.contains(index)
-                    ? "screen.create_colony_logistics.smart_clipboard.advanced.hide"
-                    : "screen.create_colony_logistics.smart_clipboard.advanced.show");
-            graphics.drawString(font, advancedLabel, x + 14, detailY + 3, BORDER, false);
-
-            if (advanced.contains(index)) {
-                int advancedY = detailY + 16;
-                advancedY = value(graphics, x + 20, advancedY, "screen.create_colony_logistics.smart_clipboard.do_block", entry.doBlockId());
-                advancedY = value(graphics, x + 20, advancedY, "screen.create_colony_logistics.smart_clipboard.cutter_recipe", entry.cutterRecipeId().orElse(null));
-                advancedY = value(graphics, x + 20, advancedY, "screen.create_colony_logistics.smart_clipboard.fingerprint", entry.comboFingerprintShort());
-                advancedY = value(graphics, x + 20, advancedY, "screen.create_colony_logistics.smart_clipboard.request_token", entry.requestToken().orElse(null));
-                value(graphics, x + 20, advancedY, "screen.create_colony_logistics.smart_clipboard.position", entry.requestingBuildingPos().map(this::pos).orElse(null));
-            }
         }
     }
 
@@ -212,36 +216,25 @@ public class SmartClipboardScreen extends Screen {
         height += valueLineHeight(humanizeMaterial(entry));
         height += valueLineHeight(formatHutList(entry.recipeKnownBy()));
         height += valueLineHeight(formatHutList(entry.canLearnCombo()));
-        height += 3 + LINE_HEIGHT;
-
-        if (advanced.contains(index)) {
-            height += 16;
-            height += valueLineHeight(entry.doBlockId());
-            height += valueLineHeight(entry.cutterRecipeId().orElse(null));
-            height += valueLineHeight(entry.comboFingerprintShort());
-            height += valueLineHeight(entry.requestToken().orElse(null));
-            height += valueLineHeight(entry.requestingBuildingPos().map(this::pos).orElse(null));
-        }
 
         return height + EXPANDED_BOTTOM_PADDING;
     }
 
     @Override
     public boolean mouseClicked(double mouseX, double mouseY, int button) {
+        if (searchBox.isMouseOver(mouseX, mouseY)) {
+            return searchBox.mouseClicked(mouseX, mouseY, button);
+        }
         int listTop = topPos + LIST_TOP;
         int y = listTop - scroll;
         int x = leftPos + LIST_X;
         int cardWidth = LIST_WIDTH;
 
-        for (int i = 0; i < report.entries().size(); i++) {
+        for (int i : filteredEntryIndexes()) {
             SmartClipboardReport.Entry entry = report.entries().get(i);
             int cardHeight = entryHeight(entry, i);
             if (mouseX >= x && mouseX <= x + cardWidth && mouseY >= y && mouseY <= y + cardHeight) {
-                if (expanded.contains(i) && mouseY >= y + cardHeight - (advanced.contains(i) ? 48 : 24)) {
-                    toggle(advanced, i);
-                } else {
-                    toggle(expanded, i);
-                }
+                toggle(expanded, i);
                 return true;
             }
             y += cardHeight + ROW_GAP;
@@ -255,6 +248,36 @@ public class SmartClipboardScreen extends Screen {
         int visible = LIST_BOTTOM - LIST_TOP;
         scroll = Math.max(0, Math.min(scroll - (int) (scrollY * 18), Math.max(0, contentHeight - visible)));
         return true;
+    }
+
+    @Override
+    public boolean charTyped(char codePoint, int modifiers) {
+        return searchBox.charTyped(codePoint, modifiers) || super.charTyped(codePoint, modifiers);
+    }
+
+    @Override
+    public boolean keyPressed(int keyCode, int scanCode, int modifiers) {
+        return searchBox.keyPressed(keyCode, scanCode, modifiers) || super.keyPressed(keyCode, scanCode, modifiers);
+    }
+
+    private void renderStockKeeperPanel(GuiGraphics graphics) {
+        graphics.blit(STOCK_KEEPER_TEXTURE, leftPos, topPos, 0, 0, IMAGE_WIDTH, HEADER_HEIGHT);
+        for (int y = topPos + HEADER_HEIGHT; y < topPos + IMAGE_HEIGHT - BOTTOM_HEIGHT; y += BODY_HEIGHT) {
+            int height = Math.min(BODY_HEIGHT, topPos + IMAGE_HEIGHT - BOTTOM_HEIGHT - y);
+            graphics.blit(STOCK_KEEPER_TEXTURE, leftPos, y, 0, 48, IMAGE_WIDTH, height);
+        }
+        graphics.blit(STOCK_KEEPER_TEXTURE, leftPos, topPos + IMAGE_HEIGHT - BOTTOM_HEIGHT, 0, 140, IMAGE_WIDTH, BOTTOM_HEIGHT);
+        graphics.blit(STOCK_KEEPER_TEXTURE, leftPos + 57, topPos + 17, 57, 17, 142, 18);
+    }
+
+    private void renderStockKeeperScrollbar(GuiGraphics graphics, int thumbY, int thumbHeight) {
+        int x = leftPos + SCROLL_X;
+        graphics.blit(STOCK_KEEPER_TEXTURE, x, topPos + LIST_TOP, 219, 192, 5, 4);
+        for (int y = topPos + LIST_TOP + 4; y < topPos + LIST_BOTTOM - 5; y++) {
+            graphics.blit(STOCK_KEEPER_TEXTURE, x, y, 219, 196, 5, 1);
+        }
+        graphics.blit(STOCK_KEEPER_TEXTURE, x, topPos + LIST_BOTTOM - 5, 219, 207, 5, 5);
+        graphics.blit(STOCK_KEEPER_TEXTURE, x, thumbY, 219, 197, 5, Math.min(9, thumbHeight));
     }
 
     private int maxScroll(int top, int bottom) {
@@ -279,6 +302,41 @@ public class SmartClipboardScreen extends Screen {
 
     private int valueLineHeight(String value) {
         return value == null || value.isBlank() ? 0 : LINE_HEIGHT;
+    }
+
+    private List<Integer> filteredEntryIndexes() {
+        String query = searchBox == null ? "" : searchBox.getValue().trim().toLowerCase(Locale.ROOT);
+        List<Integer> indexes = new ArrayList<>();
+        for (int i = 0; i < report.entries().size(); i++) {
+            SmartClipboardReport.Entry entry = report.entries().get(i);
+            if (query.isEmpty() || matchesSearch(entry, query)) {
+                indexes.add(i);
+            }
+        }
+        return indexes;
+    }
+
+    private boolean matchesSearch(SmartClipboardReport.Entry entry, String query) {
+        return contains(entry.requestedStack().getHoverName().getString(), query)
+                || contains(entry.requestingBuildingName(), query)
+                || contains(humanizeDomumShape(entry), query)
+                || contains(humanizeMaterial(entry), query)
+                || entry.recipeKnownBy().stream().anyMatch(value -> contains(value, query))
+                || entry.canLearnCombo().stream().anyMatch(value -> contains(value, query));
+    }
+
+    private boolean contains(String value, String query) {
+        return value != null && value.toLowerCase(Locale.ROOT).contains(query);
+    }
+
+    private String countLabel(List<String> values) {
+        if (values.isEmpty()) {
+            return Component.translatable("screen.create_colony_logistics.smart_clipboard.no").getString();
+        }
+        if (values.size() == 1) {
+            return Component.translatable("screen.create_colony_logistics.smart_clipboard.one_hut").getString();
+        }
+        return Component.translatable("screen.create_colony_logistics.smart_clipboard.hut_count", values.size()).getString();
     }
 
     private Component truncate(Component component, int width) {
