@@ -161,6 +161,11 @@ public final class RequestAnalysisService {
     }
 
     private static Optional<ItemStack> requestedStack(IRequest<?> request) {
+        Optional<ItemStack> stackBasedTask = stackBasedTaskStack(request);
+        if (stackBasedTask.isPresent()) {
+            return stackBasedTask;
+        }
+
         Object requestable = request.getRequest();
         if (requestable instanceof IDeliverable deliverable) {
             ItemStack result = deliverable.getResult();
@@ -310,6 +315,9 @@ public final class RequestAnalysisService {
         }
         if (stacks.isEmpty() && !fallback.isEmpty()) {
             stacks.add(fallback.copy());
+        }
+        if (stacks.isEmpty()) {
+            stackBasedTaskStack(request).ifPresent(stacks::add);
         }
         return stacks;
     }
@@ -570,6 +578,11 @@ public final class RequestAnalysisService {
     }
 
     private static int requestCount(IRequest<?> request) {
+        Optional<ItemStack> stackBasedTask = stackBasedTaskStack(request);
+        if (stackBasedTask.isPresent()) {
+            return Math.max(1, stackBasedTask.get().getCount());
+        }
+
         Optional<IDeliverable> deliverable = deliverable(request);
         if (deliverable.isPresent()) {
             return Math.max(1, deliverable.get().getCount());
@@ -579,6 +592,11 @@ public final class RequestAnalysisService {
     }
 
     private static String quantityDisplay(IRequest<?> request, ItemStack fallback) {
+        Optional<ItemStack> stackBasedTask = stackBasedTaskStack(request);
+        if (stackBasedTask.isPresent()) {
+            return "x" + Math.max(1, stackBasedTask.get().getCount());
+        }
+
         Optional<IDeliverable> deliverable = deliverable(request);
         if (deliverable.isPresent()) {
             int minimum = Math.max(0, deliverable.get().getMinimumCount());
