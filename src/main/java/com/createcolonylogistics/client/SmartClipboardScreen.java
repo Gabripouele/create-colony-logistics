@@ -163,8 +163,10 @@ public class SmartClipboardScreen extends Screen {
         graphics.renderItemDecorations(font, shownStack, x + 2, y + 4);
 
         int textX = x + 24;
-        Component name = Component.translatable("screen.create_colony_logistics.smart_clipboard.item_count",
-                entry.requestedStack().getHoverName(), entry.requestedCount());
+        Component name = Component.empty()
+                .append(entry.requestedStack().getHoverName())
+                .append(" ")
+                .append(entry.quantityDisplay());
         graphics.drawString(font, truncate(name, width - 28), textX, y + 3, TEXT, false);
         drawLabelValue(graphics, textX, y + 15,
                 Component.translatable("screen.create_colony_logistics.smart_clipboard.requester_label"),
@@ -539,12 +541,14 @@ public class SmartClipboardScreen extends Screen {
 
     private String treeNodeText(SmartClipboardReport.RequestTreeNode node) {
         ItemStack stack = node.stack();
+        String quantity = node.quantityDisplay() == null || node.quantityDisplay().isBlank()
+                ? "x" + Math.max(1, node.count())
+                : node.quantityDisplay();
         if (!stack.isEmpty()) {
-            return stack.getHoverName().getString() + " x" + Math.max(1, node.count());
+            return stack.getHoverName().getString() + " " + quantity;
         }
         String label = cleanTreeLabel(node.label());
-        int count = treeLabelCount(node.label(), node.count());
-        return label + " x" + Math.max(1, count);
+        return label + " " + quantity;
     }
 
     private String cleanTreeLabel(String label) {

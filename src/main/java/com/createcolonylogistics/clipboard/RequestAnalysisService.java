@@ -226,6 +226,7 @@ public final class RequestAnalysisService {
                 displayStacks(request, requestedStack),
                 requestedStack.getHoverName(),
                 requestedStack.getCount(),
+                quantityDisplay(request, requestedStack),
                 important,
                 minimumStockRequest,
                 warehouseStock(colony, requestedStack),
@@ -453,7 +454,8 @@ public final class RequestAnalysisService {
         if (remaining <= 0) {
             return nodes;
         }
-        nodes.add(new RequestTreeNode(depth, requestDisplayStack(request), requestCount(request), request.getShortDisplayString().getString()));
+        ItemStack displayStack = requestDisplayStack(request);
+        nodes.add(new RequestTreeNode(depth, displayStack, requestCount(request), quantityDisplay(request, displayStack), request.getShortDisplayString().getString()));
         if (!request.hasChildren()) {
             return nodes;
         }
@@ -492,8 +494,36 @@ public final class RequestAnalysisService {
     }
 
     private static int requestCount(IRequest<?> request) {
+        Optional<IDeliverable> deliverable = deliverable(request);
+        if (deliverable.isPresent()) {
+            return Math.max(1, deliverable.get().getCount());
+        }
         Optional<ItemStack> stack = requestedStack(request);
         return stack.map(ItemStack::getCount).orElse(1);
+    }
+
+    private static String quantityDisplay(IRequest<?> request, ItemStack fallback) {
+        Optional<IDeliverable> deliverable = deliverable(request);
+        if (deliverable.isPresent()) {
+            int minimum = Math.max(0, deliverable.get().getMinimumCount());
+            int count = Math.max(1, deliverable.get().getCount());
+            if (minimum > 0 && minimum != count) {
+                return minimum + "-" + count;
+            }
+            return "x" + count;
+        }
+        return "x" + Math.max(1, fallback.getCount());
+    }
+
+    private static Optional<IDeliverable> deliverable(IRequest<?> request) {
+        try {
+            if (request.getRequest() instanceof IDeliverable deliverable) {
+                return Optional.of(deliverable);
+            }
+            return request.getRequestOfType(IDeliverable.class);
+        } catch (RuntimeException ignored) {
+            return Optional.empty();
+        }
     }
 
     public record AnalysisResult(String colonyName, int colonyId, int buildingCount, int activeRequestCount, Map<String, List<RequestReportEntry>> groupedEntries, int reportedCount, boolean capped) {
@@ -510,6 +540,7 @@ public final class RequestAnalysisService {
             List<ItemStack> displayStacks,
             Component requestedItemName,
             int requestedCount,
+            String quantityDisplay,
             boolean important,
             boolean minimumStockRequest,
             int warehouseStock,
@@ -527,6 +558,7 @@ public final class RequestAnalysisService {
             int depth,
             ItemStack stack,
             int count,
+            String quantityDisplay,
             String label
     ) {
     }

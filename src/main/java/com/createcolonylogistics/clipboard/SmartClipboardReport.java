@@ -23,6 +23,7 @@ public record SmartClipboardReport(
                 entry.requestedStack().copy(),
                 entry.displayStacks().stream().map(ItemStack::copy).toList(),
                 entry.requestedCount(),
+                entry.quantityDisplay(),
                 entry.requesterName(),
                 entry.requesterPosition(),
                 entry.workerName(),
@@ -40,7 +41,7 @@ public record SmartClipboardReport(
                 List.copyOf(entry.canLearn()),
                 Optional.ofNullable(entry.requestToken()).filter(token -> !token.isBlank()),
                 entry.requestTree().stream()
-                        .map(node -> new RequestTreeNode(node.depth(), node.stack().copy(), node.count(), node.label()))
+                        .map(node -> new RequestTreeNode(node.depth(), node.stack().copy(), node.count(), node.quantityDisplay(), node.label()))
                         .toList()
         ))));
 
@@ -91,6 +92,7 @@ public record SmartClipboardReport(
             ItemStack requestedStack,
             List<ItemStack> displayStacks,
             int requestedCount,
+            String quantityDisplay,
             String requestingBuildingName,
             Optional<BlockPos> requestingBuildingPos,
             Optional<String> requestingWorkerName,
@@ -117,6 +119,7 @@ public record SmartClipboardReport(
                 displayStacks.add(ItemStack.OPTIONAL_STREAM_CODEC.decode(buffer));
             }
             int requestedCount = buffer.readVarInt();
+            String quantityDisplay = buffer.readUtf();
             String requestingBuildingName = buffer.readUtf();
             Optional<BlockPos> requestingBuildingPos = readOptionalBlockPos(buffer);
             Optional<String> requestingWorkerName = readOptionalString(buffer);
@@ -138,7 +141,7 @@ public record SmartClipboardReport(
             for (int i = 0; i < treeSize; i++) {
                 requestTree.add(RequestTreeNode.decode(buffer));
             }
-            return new Entry(requestedStack, displayStacks, requestedCount, requestingBuildingName, requestingBuildingPos, requestingWorkerName,
+            return new Entry(requestedStack, displayStacks, requestedCount, quantityDisplay, requestingBuildingName, requestingBuildingPos, requestingWorkerName,
                     dimensionName, resolverName, important, minimumStockRequest,
                     warehouseStock, doBlockId, cutterRecipeId, comboFingerprintShort, comboFingerprintFull,
                     exactComboAlreadyTaught, recipeKnownBy, canLearnCombo, requestToken, requestTree);
@@ -151,6 +154,7 @@ public record SmartClipboardReport(
                 ItemStack.OPTIONAL_STREAM_CODEC.encode(buffer, displayStack);
             }
             buffer.writeVarInt(requestedCount);
+            buffer.writeUtf(quantityDisplay);
             buffer.writeUtf(requestingBuildingName);
             writeOptionalBlockPos(buffer, requestingBuildingPos);
             writeOptionalString(buffer, requestingWorkerName);
@@ -178,6 +182,7 @@ public record SmartClipboardReport(
             int depth,
             ItemStack stack,
             int count,
+            String quantityDisplay,
             String label
     ) {
         private static RequestTreeNode decode(RegistryFriendlyByteBuf buffer) {
@@ -185,6 +190,7 @@ public record SmartClipboardReport(
                     buffer.readVarInt(),
                     ItemStack.OPTIONAL_STREAM_CODEC.decode(buffer),
                     buffer.readVarInt(),
+                    buffer.readUtf(),
                     buffer.readUtf()
             );
         }
@@ -193,6 +199,7 @@ public record SmartClipboardReport(
             buffer.writeVarInt(depth);
             ItemStack.OPTIONAL_STREAM_CODEC.encode(buffer, stack);
             buffer.writeVarInt(count);
+            buffer.writeUtf(quantityDisplay);
             buffer.writeUtf(label);
         }
     }
