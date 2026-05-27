@@ -3,6 +3,7 @@ package com.createcolonylogistics.item;
 import com.createcolonylogistics.clipboard.ColonyContextResolver;
 import com.createcolonylogistics.clipboard.RequestAnalysisService;
 import com.createcolonylogistics.clipboard.SmartClipboardReport;
+import com.createcolonylogistics.clipboard.SmartClipboardScrollStorage;
 import com.createcolonylogistics.network.ClientboundSmartClipboardReportPacket;
 import com.minecolonies.api.colony.IColony;
 import net.minecraft.network.chat.Component;
@@ -55,7 +56,10 @@ public class SmartColonyClipboardItem extends Item {
         }
 
         RequestAnalysisService.AnalysisResult result = RequestAnalysisService.analyze(player.serverLevel(), colony.get(), MAX_REPORT_REQUESTS);
-        PacketDistributor.sendToPlayer(player, new ClientboundSmartClipboardReportPacket(SmartClipboardReport.fromAnalysis(result)));
+        ItemStack clipboard = SmartClipboardScrollStorage.findSmartClipboard(player).orElse(ItemStack.EMPTY);
+        PacketDistributor.sendToPlayer(player, new ClientboundSmartClipboardReportPacket(
+                SmartClipboardReport.fromAnalysis(result, SmartClipboardScrollStorage.read(clipboard))
+        ));
     }
 
     private void preserveMineColoniesClipboardContext(UseOnContext context) {

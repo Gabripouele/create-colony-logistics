@@ -15,9 +15,14 @@ public record SmartClipboardReport(
         int buildingCount,
         int activeRequestCount,
         boolean capped,
+        List<ItemStack> resourceScrolls,
         List<Entry> entries
 ) {
     public static SmartClipboardReport fromAnalysis(RequestAnalysisService.AnalysisResult result) {
+        return fromAnalysis(result, List.of());
+    }
+
+    public static SmartClipboardReport fromAnalysis(RequestAnalysisService.AnalysisResult result, List<ItemStack> resourceScrolls) {
         List<Entry> entries = new ArrayList<>();
         result.groupedEntries().values().forEach(group -> group.forEach(entry -> entries.add(new Entry(
                 entry.requestedStack().copy(),
@@ -51,6 +56,7 @@ public record SmartClipboardReport(
                 result.buildingCount(),
                 result.activeRequestCount(),
                 result.capped(),
+                resourceScrolls.stream().map(ItemStack::copy).toList(),
                 entries
         );
     }
@@ -61,12 +67,17 @@ public record SmartClipboardReport(
         int buildingCount = buffer.readVarInt();
         int activeRequestCount = buffer.readVarInt();
         boolean capped = buffer.readBoolean();
+        int scrollCount = buffer.readVarInt();
+        List<ItemStack> resourceScrolls = new ArrayList<>(scrollCount);
+        for (int i = 0; i < scrollCount; i++) {
+            resourceScrolls.add(ItemStack.OPTIONAL_STREAM_CODEC.decode(buffer));
+        }
         int entryCount = buffer.readVarInt();
         List<Entry> entries = new ArrayList<>(entryCount);
         for (int i = 0; i < entryCount; i++) {
             entries.add(Entry.decode(buffer));
         }
-        return new SmartClipboardReport(colonyName, colonyId, buildingCount, activeRequestCount, capped, entries);
+        return new SmartClipboardReport(colonyName, colonyId, buildingCount, activeRequestCount, capped, resourceScrolls, entries);
     }
 
     public void encode(RegistryFriendlyByteBuf buffer) {
@@ -75,6 +86,10 @@ public record SmartClipboardReport(
         buffer.writeVarInt(buildingCount);
         buffer.writeVarInt(activeRequestCount);
         buffer.writeBoolean(capped);
+        buffer.writeVarInt(resourceScrolls.size());
+        for (ItemStack scroll : resourceScrolls) {
+            ItemStack.OPTIONAL_STREAM_CODEC.encode(buffer, scroll);
+        }
         buffer.writeVarInt(entries.size());
         for (Entry entry : entries) {
             entry.encode(buffer);
