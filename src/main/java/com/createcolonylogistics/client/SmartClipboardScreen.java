@@ -170,7 +170,7 @@ public class SmartClipboardScreen extends Screen {
                 Component.translatable("screen.create_colony_logistics.smart_clipboard.requester_label"),
                 Component.literal(displayRequester(entry)), width - 28);
 
-        if (expanded.contains(index)) {
+        if (expanded.contains(index) && hasExpandedDetails(entry)) {
             int detailY = y + EXPANDED_TOP_PADDING;
             detailY = value(graphics, x + 8, detailY, "screen.create_colony_logistics.smart_clipboard.worker", entry.requestingWorkerName().orElse(null));
             List<SmartClipboardReport.RequestTreeNode> dependencies = dependencyNodes(entry);
@@ -228,7 +228,7 @@ public class SmartClipboardScreen extends Screen {
     }
 
     private int entryHeight(SmartClipboardReport.Entry entry, int index) {
-        if (!expanded.contains(index)) {
+        if (!expanded.contains(index) || !hasExpandedDetails(entry)) {
             return COLLAPSED_HEIGHT;
         }
         int height = EXPANDED_TOP_PADDING;
@@ -259,6 +259,9 @@ public class SmartClipboardScreen extends Screen {
             if (mouseX >= x && mouseX <= x + LIST_WIDTH && mouseY >= y && mouseY <= y + cardHeight) {
                 if (expanded.contains(i) && toggleDependencyAt(entry, i, mouseY, y)) {
                     return true;
+                }
+                if (!hasExpandedDetails(entry)) {
+                    return false;
                 }
                 toggle(expanded, i);
                 return true;
@@ -388,6 +391,11 @@ public class SmartClipboardScreen extends Screen {
         return entry.requestTree().stream()
                 .filter(node -> node.depth() > 0)
                 .toList();
+    }
+
+    private boolean hasExpandedDetails(SmartClipboardReport.Entry entry) {
+        return entry.requestingWorkerName().filter(name -> !name.isBlank()).isPresent()
+                || !dependencyNodes(entry).isEmpty();
     }
 
     private List<Integer> visibleDependencyIndexes(SmartClipboardReport.Entry entry, int entryIndex) {

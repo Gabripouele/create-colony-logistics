@@ -163,7 +163,7 @@ public final class RequestAnalysisService {
         return new RequestReportEntry(
                 buildingDisplayName(building),
                 buildingPosition(building),
-                workerName(building, request.getId()),
+                workerName(building, colony.getRequestManager(), request),
                 dimensionName(request),
                 resolverName(colony, request),
                 request.getId().toString(),
@@ -241,6 +241,35 @@ public final class RequestAnalysisService {
         } catch (RuntimeException ignored) {
             return Optional.empty();
         }
+    }
+
+    private static Optional<String> workerName(IBuilding building, IRequestManager manager, IRequest<?> request) {
+        Optional<String> directWorker = workerName(building, request.getId());
+        if (directWorker.isPresent()) {
+            return directWorker;
+        }
+
+        // MineColonies often assigns the citizen to the parent builder/order request, while material or crafting child
+        // requests keep only the parent token. For display parity, inherit only from that explicit request parent chain.
+        IRequest<?> current = request;
+        for (int depth = 0; depth < 16; depth++) {
+            try {
+                if (!current.hasParent()) {
+                    return Optional.empty();
+                }
+                current = manager.getRequestForToken(current.getParent());
+                if (current == null) {
+                    return Optional.empty();
+                }
+                Optional<String> parentWorker = workerName(building, current.getId());
+                if (parentWorker.isPresent()) {
+                    return parentWorker;
+                }
+            } catch (RuntimeException ignored) {
+                return Optional.empty();
+            }
+        }
+        return Optional.empty();
     }
 
     private static Optional<String> workerName(IBuilding building, IToken<?> requestToken) {
