@@ -1,7 +1,6 @@
 package com.createcolonylogistics.client;
 
 import com.createcolonylogistics.clipboard.SmartClipboardReport;
-import net.minecraft.ChatFormatting;
 import net.minecraft.client.Minecraft;
 import net.minecraft.client.gui.GuiGraphics;
 import net.minecraft.client.gui.components.Button;
@@ -48,6 +47,9 @@ public class SmartClipboardScreen extends Screen {
     private static final int TEXT = 0xFFFFFFFF;
     private static final int MUTED = 0xFFB7A98D;
     private static final int DIM = 0xFF8D7F6B;
+    private static final int SMART_INFO_HEADER_COLOR = 0xFFE16B;
+    private static final int SMART_INFO_LABEL_COLOR = 0xFFF2D78C;
+    private static final int SMART_INFO_VALUE_COLOR = 0xFF8FA7FF;
 
     private final SmartClipboardReport report;
     private final Set<Integer> expanded = new HashSet<>();
@@ -92,13 +94,14 @@ public class SmartClipboardScreen extends Screen {
         graphics.fill(0, 0, width, height, 0x99000000);
         renderStockKeeperPanel(graphics);
 
-        graphics.drawString(font, truncate(title, 166), leftPos + 22, topPos + 8, HEADER_TEXT, false);
-        graphics.drawString(font, truncate(Component.literal(report.colonyName()), LIST_WIDTH), leftPos + LIST_X, topPos + 37, MUTED, false);
+        Component headerTitle = truncate(title, 196);
+        graphics.drawString(font, headerTitle, leftPos + (IMAGE_WIDTH - font.width(headerTitle)) / 2, topPos + 8, HEADER_TEXT, false);
+        graphics.drawString(font, truncate(Component.literal(report.colonyName()), LIST_WIDTH), leftPos + LIST_X, topPos + 37, TEXT, false);
         graphics.drawString(font, truncate(Component.translatable(
                 "screen.create_colony_logistics.smart_clipboard.summary",
                 report.activeRequestCount(),
                 report.buildingCount()
-        ), LIST_WIDTH), leftPos + LIST_X, topPos + 49, DIM, false);
+        ), LIST_WIDTH), leftPos + LIST_X, topPos + 49, MUTED, false);
         graphics.fill(leftPos + LIST_X, topPos + LIST_TOP - 3, leftPos + LIST_X + LIST_WIDTH, topPos + LIST_TOP - 2, SEPARATOR);
 
         int listTop = topPos + LIST_TOP;
@@ -170,13 +173,12 @@ public class SmartClipboardScreen extends Screen {
         Component name = Component.translatable("screen.create_colony_logistics.smart_clipboard.item_count",
                 entry.requestedStack().getHoverName(), entry.requestedCount());
         graphics.drawString(font, truncate(name, width - 28), textX, y + 3, TEXT, false);
-        graphics.drawString(font, truncate(Component.translatable("screen.create_colony_logistics.smart_clipboard.requester", displayRequester(entry.requestingBuildingName())), width - 28), textX, y + 15, MUTED, false);
+        graphics.drawString(font, truncate(Component.translatable("screen.create_colony_logistics.smart_clipboard.requester", displayRequester(entry)), width - 28), textX, y + 15, MUTED, false);
 
         if (expanded.contains(index)) {
             int detailY = y + EXPANDED_TOP_PADDING;
             detailY = value(graphics, x + 8, detailY, "screen.create_colony_logistics.smart_clipboard.requested", entry.requestedStack().getHoverName().getString() + " x" + entry.requestedCount());
-            detailY = value(graphics, x + 8, detailY, "screen.create_colony_logistics.smart_clipboard.requester", displayRequester(entry.requestingBuildingName()));
-            detailY = value(graphics, x + 8, detailY, "screen.create_colony_logistics.smart_clipboard.warehouse", stock(entry.warehouseStock()));
+            detailY = value(graphics, x + 8, detailY, "screen.create_colony_logistics.smart_clipboard.requester", displayRequester(entry));
             detailY = value(graphics, x + 8, detailY, "screen.create_colony_logistics.smart_clipboard.worker", entry.requestingWorkerName().orElse(null));
         }
     }
@@ -196,8 +198,7 @@ public class SmartClipboardScreen extends Screen {
         }
         int height = EXPANDED_TOP_PADDING;
         height += valueLineHeight(entry.requestedStack().getHoverName().getString());
-        height += valueLineHeight(entry.requestingBuildingName());
-        height += valueLineHeight(stock(entry.warehouseStock()));
+        height += valueLineHeight(displayRequester(entry));
         height += valueLineHeight(entry.requestingWorkerName().orElse(null));
 
         return height + EXPANDED_BOTTOM_PADDING;
@@ -282,17 +283,58 @@ public class SmartClipboardScreen extends Screen {
         Item.TooltipContext context = minecraft.level == null ? Item.TooltipContext.EMPTY : Item.TooltipContext.of(minecraft.level);
         List<Component> lines = new ArrayList<>(entry.requestedStack().getTooltipLines(context, minecraft.player, TooltipFlag.NORMAL));
         lines.add(Component.empty());
-        lines.add(Component.translatable("screen.create_colony_logistics.smart_clipboard.tooltip.smart").withStyle(ChatFormatting.GRAY));
-        addTooltipLine(lines, "screen.create_colony_logistics.smart_clipboard.shape", humanizeDomumShape(entry));
-        addTooltipLine(lines, "screen.create_colony_logistics.smart_clipboard.known_by", formatHutList(entry.recipeKnownBy()));
-        addTooltipLine(lines, "screen.create_colony_logistics.smart_clipboard.can_learn", formatHutList(entry.canLearnCombo()));
+        lines.add(Component.translatable("screen.create_colony_logistics.smart_clipboard.tooltip.smart")
+                .withStyle(style -> style.withColor(SMART_INFO_HEADER_COLOR)));
+        addSmartTooltipLine(lines, "screen.create_colony_logistics.smart_clipboard.tooltip.shape", humanizeDomumShape(entry));
+        addWrappedSmartTooltipLine(lines, "screen.create_colony_logistics.smart_clipboard.tooltip.can_learn", entry.canLearnCombo());
         return lines;
     }
 
-    private void addTooltipLine(List<Component> lines, String key, String value) {
+    private void addSmartTooltipLine(List<Component> lines, String key, String value) {
         if (value != null && !value.isBlank()) {
-            lines.add(Component.translatable(key, value).withStyle(ChatFormatting.DARK_GRAY));
+            lines.add(Component.translatable(key).withStyle(style -> style.withColor(SMART_INFO_LABEL_COLOR))
+                    .append(Component.literal(value).withStyle(style -> style.withColor(SMART_INFO_VALUE_COLOR))));
         }
+    }
+
+    private void addWrappedSmartTooltipLine(List<Component> lines, String key, List<String> values) {
+        String value = fullHutList(values);
+        if (value == null || value.isBlank()) {
+            return;
+        }
+
+        String label = Component.translatable(key).getString();
+        int maxWidth = 190;
+        int labelWidth = font.width(label);
+        boolean firstLine = true;
+        String remaining = value;
+        while (!remaining.isBlank()) {
+            int available = firstLine ? maxWidth - labelWidth : maxWidth - font.width("  ");
+            String part = takeTooltipPart(remaining, Math.max(40, available));
+            if (firstLine) {
+                lines.add(Component.translatable(key).withStyle(style -> style.withColor(SMART_INFO_LABEL_COLOR))
+                        .append(Component.literal(part).withStyle(style -> style.withColor(SMART_INFO_VALUE_COLOR))));
+            } else {
+                lines.add(Component.literal("  ").append(Component.literal(part)
+                        .withStyle(style -> style.withColor(SMART_INFO_VALUE_COLOR))));
+            }
+            remaining = remaining.substring(Math.min(part.length(), remaining.length())).stripLeading();
+            if (remaining.startsWith(",")) {
+                remaining = remaining.substring(1).stripLeading();
+            }
+        }
+    }
+
+    private String takeTooltipPart(String value, int width) {
+        if (font.width(value) <= width) {
+            return value;
+        }
+        String part = font.plainSubstrByWidth(value, width);
+        int comma = part.lastIndexOf(", ");
+        if (comma > 0) {
+            return part.substring(0, comma);
+        }
+        return part;
     }
 
     private int maxScroll(int top, int bottom) {
@@ -303,16 +345,6 @@ public class SmartClipboardScreen extends Screen {
         if (!set.add(value)) {
             set.remove(value);
         }
-    }
-
-    private static String stock(int value) {
-        return value < 0 ? null : Integer.toString(value);
-    }
-
-    private static String yesNo(boolean value) {
-        return Component.translatable(value
-                ? "screen.create_colony_logistics.smart_clipboard.yes"
-                : "screen.create_colony_logistics.smart_clipboard.no").getString();
     }
 
     private int valueLineHeight(String value) {
@@ -344,31 +376,31 @@ public class SmartClipboardScreen extends Screen {
         return value != null && value.toLowerCase(Locale.ROOT).contains(query);
     }
 
+    private String displayRequester(SmartClipboardReport.Entry entry) {
+        String building = displayRequester(entry.requestingBuildingName());
+        if (!isUnknownHut(building)) {
+            return building;
+        }
+        return entry.requestingWorkerName()
+                .filter(name -> !name.isBlank())
+                .map(this::displayRequester)
+                .filter(name -> !isUnknownHut(name))
+                .orElse(building);
+    }
+
     private String displayRequester(String requesterName) {
-        if (requesterName == null || requesterName.isBlank() || looksInternal(requesterName)) {
-            return Component.translatable("screen.create_colony_logistics.smart_clipboard.unknown_hut").getString();
+        if (requesterName == null || requesterName.isBlank()) {
+            return unknownHut();
         }
         return shortenHutName(requesterName);
     }
 
-    private boolean looksInternal(String value) {
-        return value.contains("@")
-                || value.contains("[")
-                || value.contains("]")
-                || value.contains("{")
-                || value.contains("}")
-                || value.contains(".")
-                || value.contains(":");
+    private boolean isUnknownHut(String value) {
+        return value.equals(unknownHut());
     }
 
-    private String countLabel(List<String> values) {
-        if (values.isEmpty()) {
-            return Component.translatable("screen.create_colony_logistics.smart_clipboard.no").getString();
-        }
-        if (values.size() == 1) {
-            return Component.translatable("screen.create_colony_logistics.smart_clipboard.one_hut").getString();
-        }
-        return Component.translatable("screen.create_colony_logistics.smart_clipboard.hut_count", values.size()).getString();
+    private String unknownHut() {
+        return Component.translatable("screen.create_colony_logistics.smart_clipboard.unknown_hut").getString();
     }
 
     private Component truncate(Component component, int width) {
@@ -383,11 +415,11 @@ public class SmartClipboardScreen extends Screen {
         if (values.isEmpty()) {
             return Component.translatable("screen.create_colony_logistics.smart_clipboard.none").getString();
         }
-        String joined = String.join(", ", values.stream().map(this::shortenHutName).toList());
-        if (values.size() > 2) {
-            joined = shortenHutName(values.get(0)) + ", " + shortenHutName(values.get(1)) + " +" + (values.size() - 2);
-        }
-        return joined;
+        return String.join(", ", values.stream().map(this::shortenHutName).distinct().toList());
+    }
+
+    private String fullHutList(List<String> values) {
+        return formatHutList(values);
     }
 
     private String shortenHutName(String name) {
@@ -396,25 +428,27 @@ public class SmartClipboardScreen extends Screen {
 
     private String humanizeHutName(String name) {
         if (name == null || name.isBlank()) {
-            return Component.translatable("screen.create_colony_logistics.smart_clipboard.unknown_hut").getString();
+            return unknownHut();
         }
-        String value = name.replaceAll("\\bcom\\.minecolonies[^\\s,;)]*", "");
+        String value = name;
+        int separator = value.indexOf(" / ");
+        if (separator >= 0) {
+            value = value.substring(0, separator);
+        }
         int colon = value.lastIndexOf(':');
         if (colon >= 0) {
             value = value.substring(colon + 1);
-        }
-        int slash = value.lastIndexOf('/');
-        if (slash >= 0) {
-            value = value.substring(slash + 1);
         }
         int dot = value.lastIndexOf('.');
         if (dot >= 0) {
             value = value.substring(dot + 1);
         }
+        value = value.replaceAll("(?i)\\bcom\\b|\\bminecolonies\\b|\\bcore\\b|\\bcolony\\b|\\bworkerbuildings\\b", " ");
+        value = value.replaceAll("(?i)building(?=[A-Z])", " ");
         value = value.replaceAll("(?i)\\b(building|build|module|crafting|hut)\\b", " ");
         value = value.replaceAll("[_\\-{}\\[\\]().:]+", " ").trim();
         if (value.isBlank()) {
-            return Component.translatable("screen.create_colony_logistics.smart_clipboard.unknown_hut").getString();
+            return unknownHut();
         }
         String[] words = value.split("\\s+");
         String chosen = words[0];

@@ -41,6 +41,8 @@
   "screen.create_colony_logistics.smart_clipboard.section.requester": "Requester",
   "screen.create_colony_logistics.smart_clipboard.section.smart": "Smart",
   "screen.create_colony_logistics.smart_clipboard.tooltip.smart": "Smart Info:",
+  "screen.create_colony_logistics.smart_clipboard.tooltip.shape": "Shape: ",
+  "screen.create_colony_logistics.smart_clipboard.tooltip.can_learn": "Can learn: ",
   "screen.create_colony_logistics.smart_clipboard.requested": "Requested: %s",
   "screen.create_colony_logistics.smart_clipboard.requester": "Requester: %s",
   "screen.create_colony_logistics.smart_clipboard.warehouse": "Warehouse: %s",
