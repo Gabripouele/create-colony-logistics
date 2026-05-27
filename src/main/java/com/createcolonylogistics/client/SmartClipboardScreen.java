@@ -4,6 +4,7 @@ import com.createcolonylogistics.clipboard.SmartClipboardReport;
 import net.minecraft.ChatFormatting;
 import net.minecraft.client.gui.GuiGraphics;
 import net.minecraft.client.gui.components.Button;
+import net.minecraft.client.gui.components.Renderable;
 import net.minecraft.client.gui.screens.Screen;
 import net.minecraft.core.BlockPos;
 import net.minecraft.network.chat.Component;
@@ -94,7 +95,11 @@ public class SmartClipboardScreen extends Screen {
             graphics.fill(leftPos + SCROLL_X - 1, thumbY, leftPos + SCROLL_X + 4, thumbY + thumbHeight, BORDER);
         }
 
-        super.render(graphics, mouseX, mouseY, partialTick);
+        // Do not call Screen#render here: vanilla starts by rendering a blurred background,
+        // which would blur the already-drawn clipboard, text, and item icons.
+        for (Renderable renderable : renderables) {
+            renderable.render(graphics, mouseX, mouseY, partialTick);
+        }
     }
 
     private int renderEntries(GuiGraphics graphics, int mouseX, int mouseY, int listTop, int listBottom) {
