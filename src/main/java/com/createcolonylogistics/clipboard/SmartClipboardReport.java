@@ -29,6 +29,7 @@ public record SmartClipboardReport(
                 entry.dimensionName(),
                 entry.resolverName(),
                 entry.important(),
+                entry.minimumStockRequest(),
                 entry.warehouseStock(),
                 entry.domumBlockId().toString(),
                 entry.cutterRecipe().map(Object::toString),
@@ -96,6 +97,7 @@ public record SmartClipboardReport(
             Optional<String> dimensionName,
             Optional<String> resolverName,
             boolean important,
+            boolean minimumStockRequest,
             int warehouseStock,
             String doBlockId,
             Optional<String> cutterRecipeId,
@@ -121,6 +123,7 @@ public record SmartClipboardReport(
             Optional<String> dimensionName = readOptionalString(buffer);
             Optional<String> resolverName = readOptionalString(buffer);
             boolean important = buffer.readBoolean();
+            boolean minimumStockRequest = buffer.readBoolean();
             int warehouseStock = buffer.readVarInt();
             String doBlockId = buffer.readUtf();
             Optional<String> cutterRecipeId = readOptionalString(buffer);
@@ -136,7 +139,7 @@ public record SmartClipboardReport(
                 requestTree.add(RequestTreeNode.decode(buffer));
             }
             return new Entry(requestedStack, displayStacks, requestedCount, requestingBuildingName, requestingBuildingPos, requestingWorkerName,
-                    dimensionName, resolverName, important,
+                    dimensionName, resolverName, important, minimumStockRequest,
                     warehouseStock, doBlockId, cutterRecipeId, comboFingerprintShort, comboFingerprintFull,
                     exactComboAlreadyTaught, recipeKnownBy, canLearnCombo, requestToken, requestTree);
         }
@@ -154,6 +157,7 @@ public record SmartClipboardReport(
             writeOptionalString(buffer, dimensionName);
             writeOptionalString(buffer, resolverName);
             buffer.writeBoolean(important);
+            buffer.writeBoolean(minimumStockRequest);
             buffer.writeVarInt(warehouseStock);
             buffer.writeUtf(doBlockId);
             writeOptionalString(buffer, cutterRecipeId);

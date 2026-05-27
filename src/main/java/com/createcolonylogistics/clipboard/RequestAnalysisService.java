@@ -9,6 +9,7 @@ import com.minecolonies.api.colony.requestsystem.request.IRequest;
 import com.minecolonies.api.colony.requestsystem.request.RequestState;
 import com.minecolonies.api.colony.requestsystem.requestable.IDeliverable;
 import com.minecolonies.api.colony.requestsystem.requestable.IStackBasedTask;
+import com.minecolonies.api.colony.requestsystem.requestable.MinimumStack;
 import com.minecolonies.api.colony.requestsystem.token.IToken;
 import com.minecolonies.api.colony.requestsystem.manager.IRequestManager;
 import net.minecraft.core.BlockPos;
@@ -205,6 +206,7 @@ public final class RequestAnalysisService {
     }
 
     private static RequestReportEntry inspectRequest(ServerLevel level, IColony colony, IBuilding building, IRequest<?> request, ItemStack requestedStack, boolean important) {
+        boolean minimumStockRequest = isMinimumStockRequest(request);
         boolean domumRequest = DomumOrnamentumRequestInspector.isDomumOrnamentumStack(requestedStack);
         ColonyProductionInspector.ProductionKnowledge knowledge = domumRequest
                 ? ColonyProductionInspector.inspect(colony, requestedStack)
@@ -216,7 +218,7 @@ public final class RequestAnalysisService {
         return new RequestReportEntry(
                 requesterDisplayName(colony.getRequestManager(), request, building),
                 building == null ? Optional.empty() : buildingPosition(building),
-                workerName(building, colony.getRequestManager(), request),
+                minimumStockRequest ? Optional.empty() : workerName(building, colony.getRequestManager(), request),
                 dimensionName(request),
                 resolverName(colony, request),
                 request.getId().toString(),
@@ -225,6 +227,7 @@ public final class RequestAnalysisService {
                 requestedStack.getHoverName(),
                 requestedStack.getCount(),
                 important,
+                minimumStockRequest,
                 warehouseStock(colony, requestedStack),
                 DomumOrnamentumRequestInspector.itemId(requestedStack),
                 cutterRecipe,
@@ -246,15 +249,25 @@ public final class RequestAnalysisService {
     }
 
     private static String requesterDisplayName(IRequestManager manager, IRequest<?> request, IBuilding fallbackBuilding) {
+        String buildingName = buildingDisplayName(fallbackBuilding);
+        if (!buildingName.isBlank()) {
+            return buildingName;
+        }
         try {
             String displayName = request.getRequester().getRequesterDisplayName(manager, request).getString();
             if (!displayName.isBlank()) {
-                return displayName;
+                return requesterBuildingPart(displayName);
             }
         } catch (RuntimeException ignored) {
             // Fall back to the building display name.
         }
-        return fallbackBuilding == null ? request.getRequester().getClass().getSimpleName() : buildingDisplayName(fallbackBuilding);
+        return fallbackBuilding == null ? request.getRequester().getClass().getSimpleName() : buildingName;
+    }
+
+    private static String requesterBuildingPart(String displayName) {
+        int separator = displayName.indexOf(':');
+        String value = separator >= 0 ? displayName.substring(0, separator) : displayName;
+        return humanizeBuildingName(value);
     }
 
     private static List<ItemStack> displayStacks(IRequest<?> request, ItemStack fallback) {
@@ -306,10 +319,56 @@ public final class RequestAnalysisService {
         if (building == null) {
             return "";
         }
-        if (building.getCustomName() != null && !building.getCustomName().isBlank()) {
-            return building.getCustomName();
+        try {
+            if (building.getBuildingType() != null) {
+                Object hutBlock = building.getBuildingType().getClass().getMethod("getBuildingBlock").invoke(building.getBuildingType());
+                Object hutNameValue = hutBlock == null ? null : hutBlock.getClass().getMethod("getHutName").invoke(hutBlock);
+                if (hutNameValue instanceof String hutName && !hutName.isBlank()) {
+                    return humanizeBuildingName(hutName);
+                }
+            }
+        } catch (ReflectiveOperationException | RuntimeException ignored) {
+            // Fall back to MineColonies' building display below.
         }
-        return building.getBuildingDisplayName();
+        try {
+            String displayName = building.getBuildingDisplayName();
+            if (displayName != null && !displayName.isBlank()) {
+                return humanizeBuildingName(displayName);
+            }
+        } catch (RuntimeException ignored) {
+            // Fall through to custom name only if MineColonies does not expose a type display.
+        }
+        if (building.getCustomName() != null && !building.getCustomName().isBlank()) {
+            return humanizeBuildingName(building.getCustomName());
+        }
+        return "";
+    }
+
+    private static String humanizeBuildingName(String name) {
+        String value = name.replaceAll("(?i)\\bHut\\b", " ")
+                .replaceAll("(?i)^blockhut", "")
+                .replaceAll("(?<=[a-z])(?=[A-Z])", " ")
+                .replace('_', ' ')
+                .replace('-', ' ')
+                .trim();
+        if (value.equalsIgnoreCase("flower")) {
+            return "Florist";
+        }
+        if (value.isBlank()) {
+            return "";
+        }
+        String[] words = value.split("\\s+");
+        StringBuilder result = new StringBuilder();
+        for (String word : words) {
+            if (word.isBlank()) {
+                continue;
+            }
+            if (!result.isEmpty()) {
+                result.append(' ');
+            }
+            result.append(Character.toUpperCase(word.charAt(0))).append(word.substring(1).toLowerCase());
+        }
+        return result.toString();
     }
 
     private static Optional<BlockPos> buildingPosition(IBuilding building) {
@@ -357,6 +416,17 @@ public final class RequestAnalysisService {
             return building.getCitizenForRequest(requestToken).map(ICitizenData::getName);
         } catch (RuntimeException ignored) {
             return Optional.empty();
+        }
+    }
+
+    private static boolean isMinimumStockRequest(IRequest<?> request) {
+        try {
+            if (request.getRequest() instanceof MinimumStack) {
+                return true;
+            }
+            return request.getRequestOfType(MinimumStack.class).isPresent();
+        } catch (RuntimeException ignored) {
+            return false;
         }
     }
 
@@ -441,6 +511,7 @@ public final class RequestAnalysisService {
             Component requestedItemName,
             int requestedCount,
             boolean important,
+            boolean minimumStockRequest,
             int warehouseStock,
             ResourceLocation domumBlockId,
             Optional<ResourceLocation> cutterRecipe,
