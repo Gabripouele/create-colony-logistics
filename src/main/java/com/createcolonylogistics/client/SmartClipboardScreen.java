@@ -101,7 +101,9 @@ public class SmartClipboardScreen extends Screen {
         for (Renderable renderable : renderables) {
             renderable.render(graphics, mouseX, mouseY, partialTick);
         }
-        renderHoveredItemTooltip(graphics, mouseX, mouseY, listTop);
+        if (!renderHoveredItemTooltip(graphics, mouseX, mouseY, listTop)) {
+            renderHoveredOverflowTooltip(graphics, mouseX, mouseY, listTop);
+        }
     }
 
     private void renderImportantButton(GuiGraphics graphics, int mouseX, int mouseY) {
@@ -310,7 +312,7 @@ public class SmartClipboardScreen extends Screen {
         graphics.blit(STOCK_KEEPER_TEXTURE, x, thumbY, 219, 197, 5, Math.min(9, thumbHeight));
     }
 
-    private void renderHoveredItemTooltip(GuiGraphics graphics, int mouseX, int mouseY, int listTop) {
+    private boolean renderHoveredItemTooltip(GuiGraphics graphics, int mouseX, int mouseY, int listTop) {
         int x = leftPos + LIST_X;
         int y = listTop - scroll;
         for (int i : filteredEntryIndexes()) {
@@ -319,10 +321,65 @@ public class SmartClipboardScreen extends Screen {
             if (mouseX >= x + 2 && mouseX < x + 18 && mouseY >= y + 4 && mouseY < y + 20) {
                 ItemStack shownStack = displayStack(entry);
                 graphics.renderComponentTooltip(font, buildApprovedSmartInfoTooltip(entry, shownStack), mouseX, mouseY, shownStack);
-                return;
+                return true;
             }
             y += cardHeight + ROW_GAP;
         }
+        return false;
+    }
+
+    private void renderHoveredOverflowTooltip(GuiGraphics graphics, int mouseX, int mouseY, int listTop) {
+        int x = leftPos + LIST_X;
+        int y = listTop - scroll;
+        for (int i : filteredEntryIndexes()) {
+            SmartClipboardReport.Entry entry = report.entries().get(i);
+            int cardHeight = entryHeight(entry, i);
+            String itemText = entry.requestedStack().getHoverName().getString() + " " + entry.quantityDisplay();
+            if (hoveredTruncatedText(mouseX, mouseY, x + 24, y + 3, LIST_WIDTH - 28, itemText)) {
+                graphics.renderTooltip(font, Component.literal(itemText), mouseX, mouseY);
+                return;
+            }
+
+            String requesterText = Component.translatable("screen.create_colony_logistics.smart_clipboard.requester_label").getString() + displayRequester(entry);
+            if (hoveredTruncatedText(mouseX, mouseY, x + 24, y + 15, LIST_WIDTH - 28, requesterText)) {
+                graphics.renderTooltip(font, Component.literal(requesterText), mouseX, mouseY);
+                return;
+            }
+
+            if (expanded.contains(i) && hasExpandedDetails(entry)) {
+                int detailY = y + EXPANDED_TOP_PADDING;
+                detailY += valueLineHeight(entry.minimumStockRequest()
+                        ? Component.translatable("screen.create_colony_logistics.smart_clipboard.minimum_stock_request").getString()
+                        : null);
+                if (!entry.minimumStockRequest()) {
+                    detailY += valueLineHeight(entry.requestingWorkerName().orElse(null));
+                }
+                List<SmartClipboardReport.RequestTreeNode> dependencies = dependencyNodes(entry);
+                if (!dependencies.isEmpty()) {
+                    detailY += 2;
+                    for (int nodeIndex : visibleDependencyIndexes(entry, i)) {
+                        SmartClipboardReport.RequestTreeNode node = dependencies.get(nodeIndex);
+                        int visibleDepth = Math.max(1, node.depth());
+                        int indent = Math.min(36, (visibleDepth - 1) * TREE_INDENT);
+                        int textX = x + 4 + indent + 28;
+                        int textWidth = Math.max(40, leftPos + LIST_X + LIST_WIDTH - (x + 4) - indent - 29);
+                        String text = treeNodeText(node);
+                        if (hoveredTruncatedText(mouseX, mouseY, textX, detailY + 4, textWidth, text)) {
+                            graphics.renderTooltip(font, Component.literal(text), mouseX, mouseY);
+                            return;
+                        }
+                        detailY += TREE_ROW_HEIGHT;
+                    }
+                }
+            }
+            y += cardHeight + ROW_GAP;
+        }
+    }
+
+    private boolean hoveredTruncatedText(int mouseX, int mouseY, int x, int y, int width, String text) {
+        return font.width(text) > width
+                && mouseX >= x && mouseX < x + width
+                && mouseY >= y && mouseY < y + font.lineHeight;
     }
 
     // DO NOT MODIFY: approved Smart Info tooltip golden reference.

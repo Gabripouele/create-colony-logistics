@@ -4,9 +4,14 @@ import net.minecraft.core.HolderLookup;
 import net.minecraft.core.registries.BuiltInRegistries;
 import net.minecraft.resources.ResourceLocation;
 import net.minecraft.world.item.ItemStack;
+import net.minecraft.world.item.crafting.Ingredient;
 import net.minecraft.world.item.crafting.RecipeHolder;
 import net.minecraft.world.item.crafting.RecipeManager;
 
+import java.util.ArrayList;
+import java.util.LinkedHashMap;
+import java.util.List;
+import java.util.Map;
 import java.util.Optional;
 
 public final class DomumOrnamentumRequestInspector {
@@ -29,6 +34,49 @@ public final class DomumOrnamentumRequestInspector {
     }
 
     public static Optional<ResourceLocation> findCutterRecipe(RecipeManager recipeManager, HolderLookup.Provider provider, ItemStack requestedStack) {
+        return findCutterRecipeHolder(recipeManager, provider, requestedStack).map(RecipeHolder::id);
+    }
+
+    public static List<IngredientRequirement> findCutterRequirements(RecipeManager recipeManager, HolderLookup.Provider provider, ItemStack requestedStack) {
+        Optional<RecipeHolder<?>> recipe = findCutterRecipeHolder(recipeManager, provider, requestedStack);
+        if (recipe.isEmpty()) {
+            return List.of();
+        }
+
+        ItemStack result = recipe.get().value().getResultItem(provider);
+        int outputCount = Math.max(1, result.getCount());
+        int crafts = Math.max(1, (requestedStack.getCount() + outputCount - 1) / outputCount);
+        Map<ResourceLocation, ItemStack> stacks = new LinkedHashMap<>();
+        Map<ResourceLocation, Integer> counts = new LinkedHashMap<>();
+
+        try {
+            for (Ingredient ingredient : recipe.get().value().getIngredients()) {
+                if (ingredient == null || ingredient.isEmpty()) {
+                    continue;
+                }
+                ItemStack[] options = ingredient.getItems();
+                if (options.length == 0 || options[0].isEmpty()) {
+                    continue;
+                }
+                ItemStack option = options[0].copy();
+                int required = Math.max(1, option.getCount()) * crafts;
+                ResourceLocation itemId = itemId(option);
+                stacks.putIfAbsent(itemId, option.copyWithCount(required));
+                counts.merge(itemId, required, Integer::sum);
+            }
+        } catch (RuntimeException ignored) {
+            return List.of();
+        }
+
+        List<IngredientRequirement> requirements = new ArrayList<>();
+        for (Map.Entry<ResourceLocation, ItemStack> entry : stacks.entrySet()) {
+            int count = counts.getOrDefault(entry.getKey(), entry.getValue().getCount());
+            requirements.add(new IngredientRequirement(entry.getValue().copyWithCount(count), count));
+        }
+        return requirements;
+    }
+
+    private static Optional<RecipeHolder<?>> findCutterRecipeHolder(RecipeManager recipeManager, HolderLookup.Provider provider, ItemStack requestedStack) {
         try {
             for (RecipeHolder<?> holder : recipeManager.getRecipes()) {
                 ResourceLocation typeId = BuiltInRegistries.RECIPE_TYPE.getKey(holder.value().getType());
@@ -38,12 +86,15 @@ public final class DomumOrnamentumRequestInspector {
                         && holder.id().getPath().contains(ARCHITECTS_CUTTER);
 
                 if ((cutterType || cutterPath) && ItemStack.isSameItemSameComponents(holder.value().getResultItem(provider), requestedStack)) {
-                    return Optional.of(holder.id());
+                    return Optional.of(holder);
                 }
             }
         } catch (RuntimeException ignored) {
             return Optional.empty();
         }
         return Optional.empty();
+    }
+
+    public record IngredientRequirement(ItemStack stack, int count) {
     }
 }

@@ -214,6 +214,9 @@ public final class RequestAnalysisService {
         Optional<ResourceLocation> cutterRecipe = domumRequest
                 ? DomumOrnamentumRequestInspector.findCutterRecipe(level.getRecipeManager(), level.registryAccess(), requestedStack)
                 : Optional.empty();
+        List<RequestTreeNode> tree = domumRequest
+                ? cutterRequirementTree(level, requestedStack)
+                : requestTree(colony.getRequestManager(), request, 0, 16);
 
         return new RequestReportEntry(
                 requesterDisplayName(colony.getRequestManager(), request, building),
@@ -236,8 +239,23 @@ public final class RequestAnalysisService {
                 !knowledge.knownBy().isEmpty(),
                 knowledge.knownBy(),
                 knowledge.canLearn(),
-                requestTree(colony.getRequestManager(), request, 0, 16)
+                tree
         );
+    }
+
+    private static List<RequestTreeNode> cutterRequirementTree(ServerLevel level, ItemStack requestedStack) {
+        List<DomumOrnamentumRequestInspector.IngredientRequirement> requirements =
+                DomumOrnamentumRequestInspector.findCutterRequirements(level.getRecipeManager(), level.registryAccess(), requestedStack);
+        if (requirements.isEmpty()) {
+            return List.of();
+        }
+        List<RequestTreeNode> nodes = new ArrayList<>();
+        nodes.add(new RequestTreeNode(0, requestedStack.copy(), requestedStack.getCount(), "x" + Math.max(1, requestedStack.getCount()), requestedStack.getHoverName().getString()));
+        for (DomumOrnamentumRequestInspector.IngredientRequirement requirement : requirements) {
+            ItemStack stack = requirement.stack().copyWithCount(requirement.count());
+            nodes.add(new RequestTreeNode(1, stack, requirement.count(), "x" + Math.max(1, requirement.count()), stack.getHoverName().getString()));
+        }
+        return nodes;
     }
 
     private static Optional<IBuilding> buildingForRequest(IColony colony, IRequest<?> request) {
