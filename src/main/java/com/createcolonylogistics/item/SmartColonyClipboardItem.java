@@ -2,7 +2,8 @@ package com.createcolonylogistics.item;
 
 import com.createcolonylogistics.clipboard.ColonyContextResolver;
 import com.createcolonylogistics.clipboard.RequestAnalysisService;
-import com.createcolonylogistics.clipboard.RequestReportFormatter;
+import com.createcolonylogistics.clipboard.SmartClipboardReport;
+import com.createcolonylogistics.network.ClientboundSmartClipboardReportPacket;
 import com.minecolonies.api.colony.IColony;
 import net.minecraft.network.chat.Component;
 import net.minecraft.server.level.ServerPlayer;
@@ -14,7 +15,9 @@ import net.minecraft.world.item.Item;
 import net.minecraft.world.item.ItemStack;
 import net.minecraft.world.item.context.UseOnContext;
 import net.minecraft.world.level.Level;
+import net.neoforged.neoforge.network.PacketDistributor;
 
+import java.lang.reflect.Method;
 import java.util.Optional;
 
 public class SmartColonyClipboardItem extends Item {
@@ -27,6 +30,7 @@ public class SmartColonyClipboardItem extends Item {
     @Override
     public InteractionResult useOn(UseOnContext context) {
         if (context.getPlayer() instanceof ServerPlayer serverPlayer) {
+            preserveMineColoniesClipboardContext(context);
             runReport(serverPlayer, Optional.of(context.getClickedPos()));
             return InteractionResult.SUCCESS;
         }
@@ -51,6 +55,20 @@ public class SmartColonyClipboardItem extends Item {
         }
 
         RequestAnalysisService.AnalysisResult result = RequestAnalysisService.analyze(player.serverLevel(), colony.get(), MAX_RELEVANT_REQUESTS);
-        RequestReportFormatter.format(result).forEach(player::sendSystemMessage);
+        PacketDistributor.sendToPlayer(player, new ClientboundSmartClipboardReportPacket(SmartClipboardReport.fromAnalysis(result)));
+    }
+
+    private void preserveMineColoniesClipboardContext(UseOnContext context) {
+        try {
+            Object blockEntity = context.getLevel().getBlockEntity(context.getClickedPos());
+            if (blockEntity == null) {
+                return;
+            }
+
+            Method writer = blockEntity.getClass().getMethod("writeColonyToItemStack", ItemStack.class);
+            writer.invoke(blockEntity, context.getItemInHand());
+        } catch (ReflectiveOperationException | RuntimeException ignored) {
+            // Not a MineColonies building tile or no compatible clipboard context writer.
+        }
     }
 }

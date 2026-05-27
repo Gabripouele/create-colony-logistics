@@ -31,12 +31,14 @@ public final class RequestAnalysisService {
     public static AnalysisResult analyze(ServerLevel level, IColony colony, int limit) {
         Map<String, List<RequestReportEntry>> grouped = new LinkedHashMap<>();
         int relevant = 0;
+        int activeRequestCount = 0;
         boolean capped = false;
 
         for (IBuilding requesterBuilding : colony.getBuildingManager().getBuildings().values().stream()
                 .sorted(Comparator.comparing(RequestAnalysisService::buildingDisplayName))
                 .toList()) {
             for (IRequest<?> request : openRequestsForBuilding(colony, requesterBuilding)) {
+                activeRequestCount++;
                 Optional<ItemStack> requestedStack = requestedStack(request);
                 if (requestedStack.isEmpty() || !DomumOrnamentumRequestInspector.isDomumOrnamentumStack(requestedStack.get())) {
                     continue;
@@ -53,7 +55,7 @@ public final class RequestAnalysisService {
             }
         }
 
-        return new AnalysisResult(colony.getName(), grouped, relevant, capped);
+        return new AnalysisResult(colony.getName(), colony.getID(), colony.getBuildingManager().getBuildings().size(), activeRequestCount, grouped, relevant, capped);
     }
 
     private static Collection<IRequest<?>> openRequestsForBuilding(IColony colony, IBuilding building) {
@@ -109,6 +111,7 @@ public final class RequestAnalysisService {
                 buildingPosition(building),
                 workerName(building, request.getId()),
                 request.getId().toString(),
+                requestedStack.copy(),
                 requestedStack.getHoverName(),
                 requestedStack.getCount(),
                 warehouseStock(colony, requestedStack),
@@ -168,7 +171,7 @@ public final class RequestAnalysisService {
         }
     }
 
-    public record AnalysisResult(String colonyName, Map<String, List<RequestReportEntry>> groupedEntries, int reportedCount, boolean capped) {
+    public record AnalysisResult(String colonyName, int colonyId, int buildingCount, int activeRequestCount, Map<String, List<RequestReportEntry>> groupedEntries, int reportedCount, boolean capped) {
     }
 
     public record RequestReportEntry(
@@ -176,6 +179,7 @@ public final class RequestAnalysisService {
             Optional<BlockPos> requesterPosition,
             Optional<String> workerName,
             String requestToken,
+            ItemStack requestedStack,
             Component requestedItemName,
             int requestedCount,
             int warehouseStock,
