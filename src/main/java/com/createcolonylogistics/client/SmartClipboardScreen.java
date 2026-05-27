@@ -26,23 +26,26 @@ public class SmartClipboardScreen extends Screen {
     private static final int HEADER_HEIGHT = 36;
     private static final int BODY_HEIGHT = 20;
     private static final int BOTTOM_HEIGHT = 20;
-    private static final int LIST_X = 22;
-    private static final int LIST_WIDTH = 202;
+    // StockKeeperRequestScreen uses itemsX = guiLeft + ((windowWidth - 180) / 2) + 1 and a 180px item area.
+    private static final int LIST_X = 39;
+    private static final int LIST_WIDTH = 180;
     private static final int LIST_TOP = 48;
     private static final int LIST_BOTTOM = 294;
-    private static final int SCROLL_X = 230;
-    private static final int ROW_GAP = 3;
-    private static final int LINE_HEIGHT = 11;
-    private static final int COLLAPSED_HEIGHT = 44;
-    private static final int EXPANDED_TOP_PADDING = 46;
+    private static final int SCROLL_X = 219;
+    private static final int ROW_GAP = 2;
+    // Vanilla font is 9px high; Create's stock keeper advances list content in 20px rows.
+    private static final int LINE_HEIGHT = 10;
+    private static final int COLLAPSED_HEIGHT = 40;
+    private static final int EXPANDED_TOP_PADDING = 42;
     private static final int EXPANDED_BOTTOM_PADDING = 8;
     private static final int CARD = 0x18F7E3B0;
     private static final int CARD_HOVER = 0x35FFFFFF;
-    private static final int BORDER = 0xFF8A5D2A;
-    private static final int TEXT = 0xFF311A00;
-    private static final int MUTED = 0xFF6E5330;
-    private static final int GOOD = 0xFF7FCF84;
-    private static final int WARN = 0xFFC06B22;
+    private static final int BORDER = 0xFF714A40;
+    // Matched to Create StockKeeperRequestScreen: search/text color 0x4A2D31, muted address text 0x714A40.
+    private static final int TEXT = 0xFF4A2D31;
+    private static final int MUTED = 0xFF714A40;
+    private static final int GOOD = 0xFF4F7A42;
+    private static final int WARN = 0xFF8D7F6B;
 
     private final SmartClipboardReport report;
     private final Set<Integer> expanded = new HashSet<>();
@@ -67,6 +70,7 @@ public class SmartClipboardScreen extends Screen {
         searchBox.setMaxLength(50);
         searchBox.setBordered(false);
         searchBox.setTextColor(0x4A2D11);
+        searchBox.setTextShadow(false);
         searchBox.setHint(Component.translatable("screen.create_colony_logistics.smart_clipboard.search"));
         searchBox.setResponder(ignored -> scroll = 0);
         addWidget(searchBox);
@@ -86,7 +90,7 @@ public class SmartClipboardScreen extends Screen {
         graphics.fill(0, 0, width, height, 0x99000000);
         renderStockKeeperPanel(graphics);
 
-        graphics.drawString(font, title, leftPos + 22, topPos + 8, TEXT, false);
+        graphics.drawString(font, truncate(title, 196), leftPos + 22, topPos + 8, TEXT, false);
         graphics.drawString(font, Component.translatable(
                 "screen.create_colony_logistics.smart_clipboard.subtitle",
                 report.colonyName(),
@@ -158,26 +162,27 @@ public class SmartClipboardScreen extends Screen {
         graphics.fill(x, y, x + width, y + height, hovered ? CARD_HOVER : CARD);
         graphics.fill(x, y + height - 1, x + width, y + height, 0x66735A38);
 
-        graphics.renderItem(entry.requestedStack(), x + 6, y + 7);
-        graphics.renderItemDecorations(font, entry.requestedStack(), x + 6, y + 7);
+        graphics.renderItem(entry.requestedStack(), x + 2, y + 7);
+        graphics.renderItemDecorations(font, entry.requestedStack(), x + 2, y + 7);
 
         Component status = entry.exactComboAlreadyTaught()
                 ? Component.translatable("screen.create_colony_logistics.smart_clipboard.yes")
                 : Component.translatable("screen.create_colony_logistics.smart_clipboard.no");
-        int textX = x + 30;
+        int textX = x + 24;
         Component name = Component.translatable("screen.create_colony_logistics.smart_clipboard.item_count",
                 entry.requestedStack().getHoverName(), entry.requestedCount());
-        graphics.drawString(font, truncate(name, width - 34), textX, y + 5, TEXT, false);
+        graphics.drawString(font, truncate(name, width - 28), textX, y + 4, TEXT, false);
 
         Component known = Component.translatable("screen.create_colony_logistics.smart_clipboard.known_short", status);
         int knownX = x + width - font.width(known) - 4;
-        graphics.drawString(font, known, knownX, y + 18, entry.exactComboAlreadyTaught() ? GOOD : WARN, false);
-        graphics.drawString(font, truncate(Component.literal(entry.requestingBuildingName()), Math.max(20, knownX - textX - 4)), textX, y + 18, MUTED, false);
-        graphics.drawString(font, Component.translatable("screen.create_colony_logistics.smart_clipboard.can_learn_short", countLabel(entry.canLearnCombo())), textX, y + 30, MUTED, false);
+        graphics.drawString(font, known, knownX, y + 15, entry.exactComboAlreadyTaught() ? GOOD : WARN, false);
+        graphics.drawString(font, truncate(Component.literal(displayRequester(entry.requestingBuildingName())), Math.max(20, knownX - textX - 4)), textX, y + 15, MUTED, false);
+        Component learn = Component.translatable("screen.create_colony_logistics.smart_clipboard.can_learn_short", countLabel(entry.canLearnCombo()));
+        graphics.drawString(font, truncate(learn, width - 28), textX, y + 26, MUTED, false);
 
         if (expanded.contains(index)) {
             int detailY = y + EXPANDED_TOP_PADDING;
-            detailY = value(graphics, x + 8, detailY, "screen.create_colony_logistics.smart_clipboard.requester", entry.requestingBuildingName());
+            detailY = value(graphics, x + 8, detailY, "screen.create_colony_logistics.smart_clipboard.requester", displayRequester(entry.requestingBuildingName()));
             detailY = value(graphics, x + 8, detailY, "screen.create_colony_logistics.smart_clipboard.warehouse", stock(entry.warehouseStock()));
             detailY = value(graphics, x + 8, detailY, "screen.create_colony_logistics.smart_clipboard.worker", entry.requestingWorkerName().orElse(null));
 
@@ -327,6 +332,23 @@ public class SmartClipboardScreen extends Screen {
 
     private boolean contains(String value, String query) {
         return value != null && value.toLowerCase(Locale.ROOT).contains(query);
+    }
+
+    private String displayRequester(String requesterName) {
+        if (requesterName == null || requesterName.isBlank() || looksInternal(requesterName)) {
+            return Component.translatable("screen.create_colony_logistics.smart_clipboard.unknown_hut").getString();
+        }
+        return shortenHutName(requesterName);
+    }
+
+    private boolean looksInternal(String value) {
+        return value.contains("@")
+                || value.contains("[")
+                || value.contains("]")
+                || value.contains("{")
+                || value.contains("}")
+                || value.contains(".")
+                || value.contains(":");
     }
 
     private String countLabel(List<String> values) {

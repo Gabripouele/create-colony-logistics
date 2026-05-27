@@ -32,6 +32,7 @@
   "screen.create_colony_logistics.smart_clipboard.can_learn_short": "Can learn: %s",
   "screen.create_colony_logistics.smart_clipboard.one_hut": "1 hut",
   "screen.create_colony_logistics.smart_clipboard.hut_count": "%s huts",
+  "screen.create_colony_logistics.smart_clipboard.unknown_hut": "Unknown hut",
   "screen.create_colony_logistics.smart_clipboard.request_line": "x%s requested by %s",
   "screen.create_colony_logistics.smart_clipboard.status_known": "Known",
   "screen.create_colony_logistics.smart_clipboard.status_missing": "Missing",
