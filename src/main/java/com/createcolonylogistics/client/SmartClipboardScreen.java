@@ -28,6 +28,10 @@ public class SmartClipboardScreen extends Screen {
     private static final int LIST_BOTTOM = 218;
     private static final int SCROLL_X = 218;
     private static final int ROW_GAP = 3;
+    private static final int LINE_HEIGHT = 11;
+    private static final int COLLAPSED_HEIGHT = 34;
+    private static final int EXPANDED_TOP_PADDING = 34;
+    private static final int EXPANDED_BOTTOM_PADDING = 8;
     private static final int CARD = 0x20F7E3B0;
     private static final int CARD_HOVER = 0x45FFFFFF;
     private static final int BORDER = 0xFF8A5D2A;
@@ -117,7 +121,7 @@ public class SmartClipboardScreen extends Screen {
 
         for (int i = 0; i < report.entries().size(); i++) {
             SmartClipboardReport.Entry entry = report.entries().get(i);
-            int cardHeight = entryHeight(i);
+            int cardHeight = entryHeight(entry, i);
             if (y + cardHeight >= listTop && y <= listBottom) {
                 renderEntry(graphics, entry, i, x, y, cardWidth, cardHeight, mouseX, mouseY);
             }
@@ -141,30 +145,29 @@ public class SmartClipboardScreen extends Screen {
         graphics.renderItemDecorations(font, entry.requestedStack(), x + 4, y + 6);
 
         Component status = entry.exactComboAlreadyTaught()
-                ? Component.translatable("screen.create_colony_logistics.smart_clipboard.status_known")
-                : Component.translatable("screen.create_colony_logistics.smart_clipboard.status_missing");
+                ? Component.translatable("screen.create_colony_logistics.smart_clipboard.yes")
+                : Component.translatable("screen.create_colony_logistics.smart_clipboard.no");
         int textX = x + 26;
-        int statusX = x + width - font.width(status) - 4;
-        graphics.drawString(font, font.plainSubstrByWidth(entry.requestedStack().getHoverName().getString(), Math.max(20, statusX - textX - 4)), textX, y + 5, TEXT, false);
-        graphics.drawString(font, Component.translatable("screen.create_colony_logistics.smart_clipboard.request_line", entry.requestedCount(), entry.requestingBuildingName()), textX, y + 17, MUTED, false);
-        graphics.drawString(font, status, statusX, y + 17, entry.exactComboAlreadyTaught() ? GOOD : WARN, false);
+        Component name = Component.translatable("screen.create_colony_logistics.smart_clipboard.item_count",
+                entry.requestedStack().getHoverName(), entry.requestedCount());
+        graphics.drawString(font, truncate(name, width - 30), textX, y + 5, TEXT, false);
+
+        Component known = Component.translatable("screen.create_colony_logistics.smart_clipboard.known_short", status);
+        int knownX = x + width - font.width(known) - 4;
+        graphics.drawString(font, known, knownX, y + 17, entry.exactComboAlreadyTaught() ? GOOD : WARN, false);
+        graphics.drawString(font, truncate(Component.literal(entry.requestingBuildingName()), Math.max(20, knownX - textX - 4)), textX, y + 17, MUTED, false);
 
         if (expanded.contains(index)) {
-            int detailY = y + 34;
-            detailY = section(graphics, x + 8, detailY, Component.translatable("screen.create_colony_logistics.smart_clipboard.section.availability"));
-            detailY = value(graphics, x + 14, detailY, "screen.create_colony_logistics.smart_clipboard.stock", stock(entry.warehouseStock()));
-            detailY = value(graphics, x + 14, detailY, "screen.create_colony_logistics.smart_clipboard.known_by", listOrUnknown(entry.recipeKnownBy()));
-            detailY = value(graphics, x + 14, detailY, "screen.create_colony_logistics.smart_clipboard.can_learn", listOrUnknown(entry.canLearnCombo()));
+            int detailY = y + EXPANDED_TOP_PADDING;
+            detailY = value(graphics, x + 8, detailY, "screen.create_colony_logistics.smart_clipboard.requester", entry.requestingBuildingName());
+            detailY = value(graphics, x + 8, detailY, "screen.create_colony_logistics.smart_clipboard.warehouse", stock(entry.warehouseStock()));
+            detailY = value(graphics, x + 8, detailY, "screen.create_colony_logistics.smart_clipboard.worker", entry.requestingWorkerName().orElse(null));
 
-            detailY = section(graphics, x + 8, detailY + 1, Component.translatable("screen.create_colony_logistics.smart_clipboard.section.requester"));
-            detailY = value(graphics, x + 14, detailY, "screen.create_colony_logistics.smart_clipboard.worker", entry.requestingWorkerName().orElse(null));
-            detailY = value(graphics, x + 14, detailY, "screen.create_colony_logistics.smart_clipboard.position", entry.requestingBuildingPos().map(this::pos).orElse(null));
-
-            detailY = section(graphics, x + 8, detailY + 1, Component.translatable("screen.create_colony_logistics.smart_clipboard.section.smart"));
-            detailY = value(graphics, x + 14, detailY, "screen.create_colony_logistics.smart_clipboard.taught", yesNo(entry.exactComboAlreadyTaught()));
-            detailY = value(graphics, x + 14, detailY, "screen.create_colony_logistics.smart_clipboard.do_block", entry.doBlockId());
-            detailY = value(graphics, x + 14, detailY, "screen.create_colony_logistics.smart_clipboard.cutter_recipe", entry.cutterRecipeId().orElse(null));
-            detailY = value(graphics, x + 14, detailY, "screen.create_colony_logistics.smart_clipboard.fingerprint", entry.comboFingerprintShort());
+            detailY = section(graphics, x + 8, detailY + 2, Component.translatable("screen.create_colony_logistics.smart_clipboard.section.smart"));
+            detailY = value(graphics, x + 14, detailY, "screen.create_colony_logistics.smart_clipboard.shape", humanizeDomumShape(entry));
+            detailY = value(graphics, x + 14, detailY, "screen.create_colony_logistics.smart_clipboard.material", humanizeMaterial(entry));
+            detailY = value(graphics, x + 14, detailY, "screen.create_colony_logistics.smart_clipboard.known_by", formatHutList(entry.recipeKnownBy()));
+            detailY = value(graphics, x + 14, detailY, "screen.create_colony_logistics.smart_clipboard.can_learn", formatHutList(entry.canLearnCombo()));
 
             Component advancedLabel = Component.translatable(advanced.contains(index)
                     ? "screen.create_colony_logistics.smart_clipboard.advanced.hide"
@@ -172,31 +175,55 @@ public class SmartClipboardScreen extends Screen {
             graphics.drawString(font, advancedLabel, x + 14, detailY + 3, BORDER, false);
 
             if (advanced.contains(index)) {
-                value(graphics, x + 20, detailY + 16, "screen.create_colony_logistics.smart_clipboard.request_token", entry.requestToken().orElse(null));
-                value(graphics, x + 20, detailY + 28, "screen.create_colony_logistics.smart_clipboard.fingerprint_full", entry.comboFingerprintFull());
+                int advancedY = detailY + 16;
+                advancedY = value(graphics, x + 20, advancedY, "screen.create_colony_logistics.smart_clipboard.do_block", entry.doBlockId());
+                advancedY = value(graphics, x + 20, advancedY, "screen.create_colony_logistics.smart_clipboard.cutter_recipe", entry.cutterRecipeId().orElse(null));
+                advancedY = value(graphics, x + 20, advancedY, "screen.create_colony_logistics.smart_clipboard.fingerprint", entry.comboFingerprintShort());
+                advancedY = value(graphics, x + 20, advancedY, "screen.create_colony_logistics.smart_clipboard.request_token", entry.requestToken().orElse(null));
+                value(graphics, x + 20, advancedY, "screen.create_colony_logistics.smart_clipboard.position", entry.requestingBuildingPos().map(this::pos).orElse(null));
             }
         }
     }
 
     private int section(GuiGraphics graphics, int x, int y, Component label) {
         graphics.drawString(font, label.copy().withStyle(ChatFormatting.BOLD), x, y, BORDER, false);
-        return y + 11;
+        return y + LINE_HEIGHT;
     }
 
     private int value(GuiGraphics graphics, int x, int y, String key, String value) {
         if (value == null || value.isBlank()) {
-            value = Component.translatable("screen.create_colony_logistics.smart_clipboard.unknown").getString();
+            return y;
         }
         Component line = Component.translatable(key, value);
-        graphics.drawString(font, font.plainSubstrByWidth(line.getString(), Math.max(40, leftPos + LIST_X + LIST_WIDTH - x - 4)), x, y, MUTED, false);
-        return y + 11;
+        graphics.drawString(font, truncate(line, Math.max(40, leftPos + LIST_X + LIST_WIDTH - x - 4)), x, y, MUTED, false);
+        return y + LINE_HEIGHT;
     }
 
-    private int entryHeight(int index) {
+    private int entryHeight(SmartClipboardReport.Entry entry, int index) {
         if (!expanded.contains(index)) {
-            return 38;
+            return COLLAPSED_HEIGHT;
         }
-        return advanced.contains(index) ? 178 : 154;
+        int height = EXPANDED_TOP_PADDING;
+        height += valueLineHeight(entry.requestingBuildingName());
+        height += valueLineHeight(stock(entry.warehouseStock()));
+        height += valueLineHeight(entry.requestingWorkerName().orElse(null));
+        height += 2 + LINE_HEIGHT;
+        height += valueLineHeight(humanizeDomumShape(entry));
+        height += valueLineHeight(humanizeMaterial(entry));
+        height += valueLineHeight(formatHutList(entry.recipeKnownBy()));
+        height += valueLineHeight(formatHutList(entry.canLearnCombo()));
+        height += 3 + LINE_HEIGHT;
+
+        if (advanced.contains(index)) {
+            height += 16;
+            height += valueLineHeight(entry.doBlockId());
+            height += valueLineHeight(entry.cutterRecipeId().orElse(null));
+            height += valueLineHeight(entry.comboFingerprintShort());
+            height += valueLineHeight(entry.requestToken().orElse(null));
+            height += valueLineHeight(entry.requestingBuildingPos().map(this::pos).orElse(null));
+        }
+
+        return height + EXPANDED_BOTTOM_PADDING;
     }
 
     @Override
@@ -207,7 +234,8 @@ public class SmartClipboardScreen extends Screen {
         int cardWidth = LIST_WIDTH;
 
         for (int i = 0; i < report.entries().size(); i++) {
-            int cardHeight = entryHeight(i);
+            SmartClipboardReport.Entry entry = report.entries().get(i);
+            int cardHeight = entryHeight(entry, i);
             if (mouseX >= x && mouseX <= x + cardWidth && mouseY >= y && mouseY <= y + cardHeight) {
                 if (expanded.contains(i) && mouseY >= y + cardHeight - (advanced.contains(i) ? 48 : 24)) {
                     toggle(advanced, i);
@@ -249,8 +277,74 @@ public class SmartClipboardScreen extends Screen {
                 : "screen.create_colony_logistics.smart_clipboard.no").getString();
     }
 
-    private String listOrUnknown(List<String> values) {
-        return values.isEmpty() ? null : String.join(", ", values);
+    private int valueLineHeight(String value) {
+        return value == null || value.isBlank() ? 0 : LINE_HEIGHT;
+    }
+
+    private Component truncate(Component component, int width) {
+        String text = component.getString();
+        if (font.width(text) <= width) {
+            return component;
+        }
+        return Component.literal(font.plainSubstrByWidth(text, Math.max(0, width - font.width("..."))) + "...");
+    }
+
+    private String formatHutList(List<String> values) {
+        if (values.isEmpty()) {
+            return Component.translatable("screen.create_colony_logistics.smart_clipboard.none").getString();
+        }
+        String joined = String.join(", ", values.stream().map(this::shortenHutName).toList());
+        if (values.size() > 2) {
+            joined = shortenHutName(values.get(0)) + ", " + shortenHutName(values.get(1)) + " +" + (values.size() - 2);
+        }
+        return joined;
+    }
+
+    private String shortenHutName(String name) {
+        return name.replace(" Hut", "").replace("Building ", "");
+    }
+
+    private String humanizeDomumShape(SmartClipboardReport.Entry entry) {
+        return humanizeResourcePath(entry.doBlockId());
+    }
+
+    private String humanizeMaterial(SmartClipboardReport.Entry entry) {
+        String itemName = entry.requestedStack().getHoverName().getString();
+        String shape = humanizeDomumShape(entry);
+        String material = itemName.replace(shape, "").replace(shape.toLowerCase(), "").trim();
+        material = material.replaceAll("(?i)\\b(panel|block|slab|stairs|stair|door|trapdoor|fence|gate|wall|framed|shingle|shingles)\\b", "").trim();
+        if (material.isBlank() || material.equals(itemName)) {
+            return null;
+        }
+        String[] words = material.split("\\s+");
+        if (words.length > 2) {
+            return words[0] + " + " + words[1];
+        }
+        return material;
+    }
+
+    private String humanizeResourcePath(String id) {
+        String path = id;
+        int colon = path.indexOf(':');
+        if (colon >= 0) {
+            path = path.substring(colon + 1);
+        }
+        int slash = path.lastIndexOf('/');
+        if (slash >= 0) {
+            path = path.substring(slash + 1);
+        }
+        path = path.replace('_', ' ').replace('-', ' ').trim();
+        if (path.isBlank()) {
+            return null;
+        }
+        StringBuilder result = new StringBuilder();
+        for (String word : path.split("\\s+")) {
+            if (!result.isEmpty()) {
+                result.append(' ');
+            }
+            result.append(Character.toUpperCase(word.charAt(0))).append(word.substring(1));
+        }
+        return result.toString();
     }
 
     private String pos(BlockPos pos) {
