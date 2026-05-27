@@ -65,6 +65,14 @@ logCacheStatsIntervalTicks = 1200
 
 Lower `cacheTtlTicks` for fresher display data. Raise it only if you understand the tradeoff: the cache affects monitoring summaries, not real movement, but longer TTLs can make displayed stock levels lag behind the colony inventory for longer.
 
+## Smart Colony Clipboard
+
+The Smart Colony Clipboard is a read-only diagnostic item for MineColonies colonies using Domum Ornamentum Architect's Cutter outputs. Use it on a MineColonies hut/building, or use it while standing in a colony, to scan active colony requests and report relevant Domum Ornamentum requests in chat.
+
+It currently reports requested item/count, warehouse stock when safely readable, the Domum Ornamentum output id, matching cutter recipe source when extractable, the exact stack/component fingerprint, and which compatible colony crafting modules already know or can likely learn the exact combo.
+
+It does not teach recipes yet, add keybinds, open a custom GUI, alter worker AI, change Create logistics, or mutate MineColonies request/crafting data. A future version is planned to help teach exact Domum Ornamentum Architect's Cutter combos to compatible huts.
+
 ## Spark Testing
 
 1. Run the server without this addon.

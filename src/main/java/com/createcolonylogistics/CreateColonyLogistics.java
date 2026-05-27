@@ -3,6 +3,7 @@ package com.createcolonylogistics;
 import com.mojang.logging.LogUtils;
 import com.createcolonylogistics.config.ColonyLogisticsConfig;
 import com.createcolonylogistics.cache.ColonyStockCache;
+import com.createcolonylogistics.registry.CCLItems;
 import net.neoforged.bus.api.IEventBus;
 import net.neoforged.fml.ModContainer;
 import net.neoforged.fml.common.Mod;
@@ -17,6 +18,8 @@ public final class CreateColonyLogistics {
     public static final Logger LOGGER = LogUtils.getLogger();
 
     public CreateColonyLogistics(IEventBus modEventBus, ModContainer modContainer) {
+        CCLItems.register(modEventBus);
+        modEventBus.addListener(CCLItems::addCreativeTabItems);
         modContainer.registerConfig(ModConfig.Type.SERVER, ColonyLogisticsConfig.SPEC);
         NeoForge.EVENT_BUS.addListener(this::onServerPostTick);
     }

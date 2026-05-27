@@ -1,0 +1,21 @@
+{
+  "item.create_colony_logistics.smart_colony_clipboard": "Smart Colony Clipboard",
+  "item.create_colony_logistics.smart_colony_clipboard.header": "Smart Colony Clipboard: %s",
+  "item.create_colony_logistics.smart_colony_clipboard.no_colony": "No MineColonies colony could be resolved here.",
+  "item.create_colony_logistics.smart_colony_clipboard.no_requests": "No active Domum Ornamentum Architect's Cutter requests were found.",
+  "item.create_colony_logistics.smart_colony_clipboard.yes": "Yes",
+  "item.create_colony_logistics.smart_colony_clipboard.no": "No",
+  "item.create_colony_logistics.smart_colony_clipboard.unknown": "unknown",
+  "item.create_colony_logistics.smart_colony_clipboard.none": "none",
+  "item.create_colony_logistics.smart_colony_clipboard.group": "%s requests: %s",
+  "item.create_colony_logistics.smart_colony_clipboard.item_line": "- %s x%s",
+  "item.create_colony_logistics.smart_colony_clipboard.stock": "  Warehouse stock: %s",
+  "item.create_colony_logistics.smart_colony_clipboard.do_block": "  DO block: %s",
+  "item.create_colony_logistics.smart_colony_clipboard.cutter_recipe": "  Cutter recipe: %s",
+  "item.create_colony_logistics.smart_colony_clipboard.taught": "  Exact combo already taught: %s",
+  "item.create_colony_logistics.smart_colony_clipboard.known_by": "  Recipe known by: %s",
+  "item.create_colony_logistics.smart_colony_clipboard.can_learn": "  Can learn combo: %s",
+  "item.create_colony_logistics.smart_colony_clipboard.request_meta": "  Request: %s | Hut pos: %s | Worker: %s",
+  "item.create_colony_logistics.smart_colony_clipboard.fingerprint": "  Exact combo fingerprint: %s",
+  "item.create_colony_logistics.smart_colony_clipboard.capped": "Output capped at 10 relevant requests."
+}
