@@ -4,7 +4,6 @@ import com.createcolonylogistics.clipboard.SmartClipboardReport;
 import net.minecraft.client.Minecraft;
 import net.minecraft.client.gui.GuiGraphics;
 import net.minecraft.client.gui.components.Button;
-import net.minecraft.client.gui.components.EditBox;
 import net.minecraft.client.gui.components.Renderable;
 import net.minecraft.client.gui.screens.Screen;
 import net.minecraft.core.BlockPos;
@@ -17,7 +16,6 @@ import java.util.ArrayList;
 import java.util.HashSet;
 import java.util.List;
 import java.util.Locale;
-import java.util.Optional;
 import java.util.Set;
 
 public class SmartClipboardScreen extends Screen {
@@ -31,7 +29,7 @@ public class SmartClipboardScreen extends Screen {
     // StockKeeperRequestScreen uses itemsX = guiLeft + ((windowWidth - 180) / 2) + 1 and a 180px item area.
     private static final int LIST_X = 39;
     private static final int LIST_WIDTH = 180;
-    private static final int LIST_TOP = 62;
+    private static final int LIST_TOP = 50;
     private static final int LIST_BOTTOM = 294;
     private static final int SCROLL_X = 219;
     private static final int ROW_GAP = 2;
@@ -47,14 +45,14 @@ public class SmartClipboardScreen extends Screen {
     private static final int TEXT = 0xFFFFFFFF;
     private static final int MUTED = 0xFFB7A98D;
     private static final int DIM = 0xFF8D7F6B;
-    private static final int SMART_INFO_HEADER_COLOR = 0xFFE16B;
+    private static final int SMART_INFO_HEADER_COLOR = 0xA0A0A0;
+    // Keep the Smart Info label/value palette stable; these match the user's sampled reference colors.
     private static final int SMART_INFO_LABEL_COLOR = 0xFFF2D78C;
     private static final int SMART_INFO_VALUE_COLOR = 0xFF8FA7FF;
 
     private final SmartClipboardReport report;
     private final Set<Integer> expanded = new HashSet<>();
     private final Set<Integer> advanced = new HashSet<>();
-    private EditBox searchBox;
     private int leftPos;
     private int topPos;
     private int scroll;
@@ -69,15 +67,6 @@ public class SmartClipboardScreen extends Screen {
     protected void init() {
         leftPos = (width - IMAGE_WIDTH) / 2;
         topPos = (height - IMAGE_HEIGHT) / 2;
-        searchBox = new EditBox(font, leftPos + 76, topPos + 22, 95, 9,
-                Component.translatable("screen.create_colony_logistics.smart_clipboard.search"));
-        searchBox.setMaxLength(50);
-        searchBox.setBordered(false);
-        searchBox.setTextColor(0x4A2D11);
-        searchBox.setTextShadow(false);
-        searchBox.setHint(Component.translatable("screen.create_colony_logistics.smart_clipboard.search"));
-        searchBox.setResponder(ignored -> scroll = 0);
-        addWidget(searchBox);
 
         addRenderableWidget(Button.builder(
                 Component.translatable("screen.create_colony_logistics.smart_clipboard.open_minecolonies_short"),
@@ -95,13 +84,13 @@ public class SmartClipboardScreen extends Screen {
         renderStockKeeperPanel(graphics);
 
         Component headerTitle = truncate(title, 196);
-        graphics.drawString(font, headerTitle, leftPos + (IMAGE_WIDTH - font.width(headerTitle)) / 2, topPos + 8, HEADER_TEXT, false);
-        graphics.drawString(font, truncate(Component.literal(report.colonyName()), LIST_WIDTH), leftPos + LIST_X, topPos + 37, TEXT, false);
+        graphics.drawString(font, headerTitle, leftPos + (IMAGE_WIDTH - font.width(headerTitle)) / 2, topPos + 6, HEADER_TEXT, false);
+        graphics.drawString(font, truncate(Component.literal(report.colonyName()), LIST_WIDTH), leftPos + LIST_X, topPos + 27, TEXT, false);
         graphics.drawString(font, truncate(Component.translatable(
                 "screen.create_colony_logistics.smart_clipboard.summary",
                 report.activeRequestCount(),
                 report.buildingCount()
-        ), LIST_WIDTH), leftPos + LIST_X, topPos + 49, MUTED, false);
+        ), LIST_WIDTH), leftPos + LIST_X, topPos + 39, MUTED, false);
         graphics.fill(leftPos + LIST_X, topPos + LIST_TOP - 3, leftPos + LIST_X + LIST_WIDTH, topPos + LIST_TOP - 2, SEPARATOR);
 
         int listTop = topPos + LIST_TOP;
@@ -125,7 +114,6 @@ public class SmartClipboardScreen extends Screen {
         for (Renderable renderable : renderables) {
             renderable.render(graphics, mouseX, mouseY, partialTick);
         }
-        searchBox.render(graphics, mouseX, mouseY, partialTick);
         renderHoveredItemTooltip(graphics, mouseX, mouseY, listTop);
     }
 
@@ -136,9 +124,7 @@ public class SmartClipboardScreen extends Screen {
         List<Integer> visibleIndexes = filteredEntryIndexes();
 
         if (visibleIndexes.isEmpty()) {
-            Component empty = report.entries().isEmpty()
-                    ? Component.translatable("screen.create_colony_logistics.smart_clipboard.empty")
-                    : Component.translatable("screen.create_colony_logistics.smart_clipboard.no_search_results");
+            Component empty = Component.translatable("screen.create_colony_logistics.smart_clipboard.empty");
             graphics.drawString(font, truncate(empty, cardWidth), x, y + 12, MUTED, false);
             if (report.capped()) {
                 graphics.drawString(font, Component.translatable("screen.create_colony_logistics.smart_clipboard.capped"), x, y + 26, DIM, false);
@@ -206,9 +192,6 @@ public class SmartClipboardScreen extends Screen {
 
     @Override
     public boolean mouseClicked(double mouseX, double mouseY, int button) {
-        if (searchBox.isMouseOver(mouseX, mouseY)) {
-            return searchBox.mouseClicked(mouseX, mouseY, button);
-        }
         int listTop = topPos + LIST_TOP;
         int y = listTop - scroll;
         int x = leftPos + LIST_X;
@@ -234,16 +217,6 @@ public class SmartClipboardScreen extends Screen {
         return true;
     }
 
-    @Override
-    public boolean charTyped(char codePoint, int modifiers) {
-        return searchBox.charTyped(codePoint, modifiers) || super.charTyped(codePoint, modifiers);
-    }
-
-    @Override
-    public boolean keyPressed(int keyCode, int scanCode, int modifiers) {
-        return searchBox.keyPressed(keyCode, scanCode, modifiers) || super.keyPressed(keyCode, scanCode, modifiers);
-    }
-
     private void renderStockKeeperPanel(GuiGraphics graphics) {
         graphics.blit(STOCK_KEEPER_TEXTURE, leftPos, topPos, 0, 0, IMAGE_WIDTH, HEADER_HEIGHT);
         for (int y = topPos + HEADER_HEIGHT; y < topPos + IMAGE_HEIGHT - BOTTOM_HEIGHT; y += BODY_HEIGHT) {
@@ -251,7 +224,6 @@ public class SmartClipboardScreen extends Screen {
             graphics.blit(STOCK_KEEPER_TEXTURE, leftPos, y, 0, 48, IMAGE_WIDTH, height);
         }
         graphics.blit(STOCK_KEEPER_TEXTURE, leftPos, topPos + IMAGE_HEIGHT - BOTTOM_HEIGHT, 0, 140, IMAGE_WIDTH, BOTTOM_HEIGHT);
-        graphics.blit(STOCK_KEEPER_TEXTURE, leftPos + 57, topPos + 17, 57, 17, 142, 18);
     }
 
     private void renderStockKeeperScrollbar(GuiGraphics graphics, int thumbY, int thumbHeight) {
@@ -315,9 +287,10 @@ public class SmartClipboardScreen extends Screen {
                 lines.add(Component.translatable(key).withStyle(style -> style.withColor(SMART_INFO_LABEL_COLOR))
                         .append(Component.literal(part).withStyle(style -> style.withColor(SMART_INFO_VALUE_COLOR))));
             } else {
-                lines.add(Component.literal("  ").append(Component.literal(part)
+                lines.add(Component.literal("           ").append(Component.literal(part)
                         .withStyle(style -> style.withColor(SMART_INFO_VALUE_COLOR))));
             }
+            firstLine = false;
             remaining = remaining.substring(Math.min(part.length(), remaining.length())).stripLeading();
             if (remaining.startsWith(",")) {
                 remaining = remaining.substring(1).stripLeading();
@@ -352,28 +325,11 @@ public class SmartClipboardScreen extends Screen {
     }
 
     private List<Integer> filteredEntryIndexes() {
-        String query = searchBox == null ? "" : searchBox.getValue().trim().toLowerCase(Locale.ROOT);
         List<Integer> indexes = new ArrayList<>();
         for (int i = 0; i < report.entries().size(); i++) {
-            SmartClipboardReport.Entry entry = report.entries().get(i);
-            if (query.isEmpty() || matchesSearch(entry, query)) {
-                indexes.add(i);
-            }
+            indexes.add(i);
         }
         return indexes;
-    }
-
-    private boolean matchesSearch(SmartClipboardReport.Entry entry, String query) {
-        return contains(entry.requestedStack().getHoverName().getString(), query)
-                || contains(entry.requestingBuildingName(), query)
-                || contains(humanizeDomumShape(entry), query)
-                || contains(humanizeMaterial(entry), query)
-                || entry.recipeKnownBy().stream().anyMatch(value -> contains(value, query))
-                || entry.canLearnCombo().stream().anyMatch(value -> contains(value, query));
-    }
-
-    private boolean contains(String value, String query) {
-        return value != null && value.toLowerCase(Locale.ROOT).contains(query);
     }
 
     private String displayRequester(SmartClipboardReport.Entry entry) {
