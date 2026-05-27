@@ -1,6 +1,7 @@
 package com.createcolonylogistics.client;
 
 import com.createcolonylogistics.clipboard.SmartClipboardReport;
+import com.createcolonylogistics.network.ServerboundSmartClipboardDebugPacket;
 import net.minecraft.client.Minecraft;
 import net.minecraft.client.gui.GuiGraphics;
 import net.minecraft.client.gui.components.Renderable;
@@ -10,6 +11,7 @@ import net.minecraft.resources.ResourceLocation;
 import net.minecraft.world.item.Item;
 import net.minecraft.world.item.ItemStack;
 import net.minecraft.world.item.TooltipFlag;
+import net.neoforged.neoforge.network.PacketDistributor;
 
 import java.util.ArrayList;
 import java.util.HashSet;
@@ -270,6 +272,10 @@ public class SmartClipboardScreen extends Screen {
             SmartClipboardReport.Entry entry = report.entries().get(i);
             int cardHeight = entryHeight(entry, i);
             if (mouseX >= x && mouseX <= x + LIST_WIDTH && mouseY >= y && mouseY <= y + cardHeight) {
+                if (Screen.hasShiftDown()) {
+                    sendDebugDumpRequest(entry);
+                    return true;
+                }
                 if (expanded.contains(i) && toggleDependencyAt(entry, i, mouseY, y)) {
                     return true;
                 }
@@ -326,6 +332,38 @@ public class SmartClipboardScreen extends Screen {
             y += cardHeight + ROW_GAP;
         }
         return false;
+    }
+
+    private void sendDebugDumpRequest(SmartClipboardReport.Entry entry) {
+        String token = entry.requestToken().orElse("");
+        if (token.isBlank()) {
+            return;
+        }
+        PacketDistributor.sendToServer(new ServerboundSmartClipboardDebugPacket(
+                token,
+                entry.requestedStack().getHoverName().getString(),
+                entry.quantityDisplay(),
+                displayRequester(entry),
+                entry.requestingWorkerName(),
+                entry.minimumStockRequest(),
+                hasExpandedDetails(entry),
+                expandableReason(entry),
+                dependencyNodes(entry).size()
+        ));
+    }
+
+    private String expandableReason(SmartClipboardReport.Entry entry) {
+        List<String> reasons = new ArrayList<>();
+        if (entry.requestingWorkerName().filter(name -> !name.isBlank()).isPresent() && !entry.minimumStockRequest()) {
+            reasons.add("worker present");
+        }
+        if (entry.minimumStockRequest()) {
+            reasons.add("minimum stock");
+        }
+        if (!dependencyNodes(entry).isEmpty()) {
+            reasons.add("dependency nodes");
+        }
+        return reasons.isEmpty() ? "none" : String.join(", ", reasons);
     }
 
     private void renderHoveredOverflowTooltip(GuiGraphics graphics, int mouseX, int mouseY, int listTop) {

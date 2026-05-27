@@ -13,10 +13,13 @@ import com.minecolonies.api.colony.requestsystem.requestable.MinimumStack;
 import com.minecolonies.api.colony.requestsystem.token.IToken;
 import com.minecolonies.api.colony.requestsystem.manager.IRequestManager;
 import net.minecraft.core.BlockPos;
+import net.minecraft.core.registries.BuiltInRegistries;
 import net.minecraft.network.chat.Component;
 import net.minecraft.resources.ResourceLocation;
 import net.minecraft.server.level.ServerLevel;
+import net.minecraft.server.level.ServerPlayer;
 import net.minecraft.world.item.ItemStack;
+import com.createcolonylogistics.CreateColonyLogistics;
 
 import java.lang.reflect.Method;
 import java.util.ArrayList;
@@ -63,6 +66,294 @@ public final class RequestAnalysisService {
         }
 
         return new AnalysisResult(colony.getName(), colony.getID(), colony.getBuildingManager().getBuildings().size(), activeRequestCount, grouped, reported, capped);
+    }
+
+    /**
+     * TEMPORARY DEBUG: dumps the runtime request chain for one Smart Clipboard row.
+     * Remove once requester/worker/dependency parity has been verified in-game.
+     */
+    public static void debugDump(ServerPlayer player, IColony colony, String requestToken, String rowItemName, String quantityDisplay,
+                                 String requesterDisplay, Optional<String> workerDisplay, boolean minimumStockRequest,
+                                 boolean expandable, String expandableReason, int clientDependencyCount) {
+        IRequestManager manager = colony.getRequestManager();
+        Optional<IRequest<?>> request = findRequestByToken(colony, requestToken);
+        CreateColonyLogistics.LOGGER.info("[SmartClipboardDebug] Player: {} colony={} ({}) token={}",
+                player.getGameProfile().getName(), colony.getName(), colony.getID(), requestToken);
+        CreateColonyLogistics.LOGGER.info("[SmartClipboardDebug] Row: item={} quantity={} requester={} worker={} minimumStock={} expandable={} reason={} clientDependencies={}",
+                rowItemName, quantityDisplay, requesterDisplay, workerDisplay.orElse("none"), minimumStockRequest, expandable, expandableReason, clientDependencyCount);
+
+        if (request.isEmpty()) {
+            CreateColonyLogistics.LOGGER.info("[SmartClipboardDebug] Request lookup: not found in current clipboard/request graph");
+            return;
+        }
+
+        IRequest<?> currentRequest = request.get();
+        IBuilding building = buildingForRequest(colony, currentRequest).orElse(null);
+        Optional<ItemStack> requestedStack = requestedStack(currentRequest);
+        boolean domumStack = requestedStack.map(DomumOrnamentumRequestInspector::isDomumOrnamentumStack).orElse(false);
+        List<RequestTreeNode> graphTree = requestTree(manager, currentRequest, 0, 16);
+        boolean graphDependencies = hasDependencyNodes(graphTree);
+        List<RequestTreeNode> cutterTree = requestedStack
+                .filter(DomumOrnamentumRequestInspector::isDomumOrnamentumStack)
+                .map(stack -> cutterRequirementTree(player.serverLevel(), stack))
+                .orElse(List.of());
+        String dependencySource = graphDependencies ? "MineColonies child graph" : (!cutterTree.isEmpty() ? "DO synthetic fallback" : "none");
+
+        CreateColonyLogistics.LOGGER.info("[SmartClipboardDebug] Request: class={} requestable={} state={} id={}",
+                className(currentRequest), requestableClassName(currentRequest), safeState(currentRequest), currentRequest.getId());
+        CreateColonyLogistics.LOGGER.info("[SmartClipboardDebug] Stack: requested={} registry={} hasComponents={} isDomum={} displayStacks={} IStackBasedTask={} IDeliverable={}",
+                requestedStack.map(stack -> stack.getHoverName().getString()).orElse("none"),
+                requestedStack.map(RequestAnalysisService::itemId).orElse("none"),
+                requestedStack.map(stack -> !stack.getComponents().isEmpty()).orElse(false),
+                domumStack,
+                displayStackCount(currentRequest),
+                stackBasedTask(currentRequest).isPresent(),
+                deliverable(currentRequest).isPresent());
+        stackBasedTask(currentRequest).ifPresent(task -> CreateColonyLogistics.LOGGER.info("[SmartClipboardDebug] IStackBasedTask: taskStack={} displayCount={} displayPrefix={}",
+                safeTaskStackName(task), safeTaskDisplayCount(task), safeTaskDisplayPrefix(task)));
+        CreateColonyLogistics.LOGGER.info("[SmartClipboardDebug] Requester: class={} display='{}' building={} position={}",
+                requesterClassName(currentRequest), requesterDisplay(manager, currentRequest), buildingDisplayName(building),
+                building == null ? "none" : buildingPosition(building).map(BlockPos::toShortString).orElse("none"));
+        CreateColonyLogistics.LOGGER.info("[SmartClipboardDebug] RequesterDisplayFallback current: {}",
+                requesterDisplayWorkerDiagnostics(manager, currentRequest));
+        CreateColonyLogistics.LOGGER.info("[SmartClipboardDebug] Worker direct: {}", building == null ? "none (no building)" : workerName(building, currentRequest.getId()).orElse("none"));
+
+        dumpParentChain(colony, manager, building, currentRequest);
+        WorkerDebug workerDebug = workerDebug(building, manager, currentRequest);
+        CreateColonyLogistics.LOGGER.info("[SmartClipboardDebug] Worker final: {} source={}", workerDebug.name().orElse("none"), workerDebug.source());
+        CreateColonyLogistics.LOGGER.info("[SmartClipboardDebug] Dependencies: source={} graphNodes={} graphDependencyNodes={} childTokens={} syntheticNodes={} serializedClientDependencyNodes={}",
+                dependencySource, graphTree.size(), dependencyCount(graphTree), childCount(currentRequest), cutterTree.size(), clientDependencyCount);
+        CreateColonyLogistics.LOGGER.info("[SmartClipboardDebug] Domum: isDO={} cutterSyntheticAttempted={} syntheticDependencyNodes={}",
+                domumStack, domumStack, dependencyCount(cutterTree));
+        CreateColonyLogistics.LOGGER.info("[SmartClipboardDebug] Expandable: {} reason={}", expandable, expandableReason);
+    }
+
+    private static Optional<IRequest<?>> findRequestByToken(IColony colony, String requestToken) {
+        IRequestManager manager = colony.getRequestManager();
+        Set<String> seen = new HashSet<>();
+        for (IRequest<?> root : clipboardRootRequests(colony)) {
+            Optional<IRequest<?>> found = findRequestInTree(manager, root, requestToken, seen, 0);
+            if (found.isPresent()) {
+                return found;
+            }
+        }
+        for (IBuilding building : colony.getBuildingManager().getBuildings().values()) {
+            for (IRequest<?> request : openRequestsForBuilding(colony, building)) {
+                Optional<IRequest<?>> found = findRequestInTree(manager, request, requestToken, seen, 0);
+                if (found.isPresent()) {
+                    return found;
+                }
+            }
+        }
+        return Optional.empty();
+    }
+
+    private static Optional<IRequest<?>> findRequestInTree(IRequestManager manager, IRequest<?> request, String requestToken, Set<String> seen, int depth) {
+        if (request == null || depth > 32 || !seen.add(request.getId().toString())) {
+            return Optional.empty();
+        }
+        if (request.getId().toString().equals(requestToken)) {
+            return Optional.of(request);
+        }
+        if (!request.hasChildren()) {
+            return Optional.empty();
+        }
+        for (IToken<?> child : request.getChildren()) {
+            try {
+                Optional<IRequest<?>> found = findRequestInTree(manager, manager.getRequestForToken(child), requestToken, seen, depth + 1);
+                if (found.isPresent()) {
+                    return found;
+                }
+            } catch (RuntimeException ignored) {
+                // Requests can resolve while diagnostics are being gathered.
+            }
+        }
+        return Optional.empty();
+    }
+
+    private static void dumpParentChain(IColony colony, IRequestManager manager, IBuilding building, IRequest<?> request) {
+        IRequest<?> current = request;
+        for (int depth = 0; current != null && depth < 16; depth++) {
+            try {
+                if (!current.hasParent()) {
+                    break;
+                }
+                current = manager.getRequestForToken(current.getParent());
+                if (current == null) {
+                    break;
+                }
+                IBuilding parentBuilding = null;
+                try {
+                    BlockPos location = current.getRequester().getLocation().getInDimensionLocation();
+                    parentBuilding = colony.getBuildingManager().getBuilding(location);
+                } catch (RuntimeException ignored) {
+                    // Keep the parent diagnostics best-effort.
+                }
+                IBuilding workerBuilding = parentBuilding == null ? building : parentBuilding;
+                CreateColonyLogistics.LOGGER.info("[SmartClipboardDebug] Parent[{}]: id={} class={} requesterDisplay='{}' displayFallback={} building={} worker={}",
+                        depth,
+                        current.getId(),
+                        className(current),
+                        requesterDisplay(manager, current),
+                        requesterDisplayWorkerDiagnostics(manager, current),
+                        buildingDisplayName(workerBuilding),
+                        workerBuilding == null ? "none" : workerName(workerBuilding, current.getId()).orElse("none"));
+            } catch (RuntimeException ignored) {
+                CreateColonyLogistics.LOGGER.info("[SmartClipboardDebug] Parent[{}]: unavailable", depth);
+                break;
+            }
+        }
+    }
+
+    private static WorkerDebug workerDebug(IBuilding building, IRequestManager manager, IRequest<?> request) {
+        if (building != null) {
+            Optional<String> directWorker = workerName(building, request.getId());
+            if (directWorker.isPresent()) {
+                return new WorkerDebug(directWorker, "direct");
+            }
+
+            IRequest<?> current = request;
+            for (int depth = 0; depth < 16; depth++) {
+                try {
+                    if (!current.hasParent()) {
+                        break;
+                    }
+                    current = manager.getRequestForToken(current.getParent());
+                    if (current == null) {
+                        break;
+                    }
+                    Optional<String> parentWorker = workerName(building, current.getId());
+                    if (parentWorker.isPresent()) {
+                        return new WorkerDebug(parentWorker, "parent[" + depth + "]");
+                    }
+                } catch (RuntimeException ignored) {
+                    break;
+                }
+            }
+        }
+        Optional<String> requesterDisplayWorker = requesterDisplayWorker(manager, request);
+        if (requesterDisplayWorker.isPresent()) {
+            return new WorkerDebug(requesterDisplayWorker, "requester-display fallback");
+        }
+        return new WorkerDebug(Optional.empty(), "none");
+    }
+
+    private static String className(Object value) {
+        return value == null ? "none" : value.getClass().getName();
+    }
+
+    private static String requestableClassName(IRequest<?> request) {
+        try {
+            return className(request.getRequest());
+        } catch (RuntimeException ignored) {
+            return "unavailable";
+        }
+    }
+
+    private static String requesterClassName(IRequest<?> request) {
+        try {
+            return className(request.getRequester());
+        } catch (RuntimeException ignored) {
+            return "unavailable";
+        }
+    }
+
+    private static String requesterDisplay(IRequestManager manager, IRequest<?> request) {
+        try {
+            return request.getRequester().getRequesterDisplayName(manager, request).getString();
+        } catch (RuntimeException ignored) {
+            return "unavailable";
+        }
+    }
+
+    private static String requesterDisplayWorkerDiagnostics(IRequestManager manager, IRequest<?> request) {
+        String display = requesterDisplay(manager, request);
+        if (display == null || display.isBlank()) {
+            return "rejected: blank display";
+        }
+        if (!display.contains(":")) {
+            return "rejected: no ':' separator";
+        }
+        String requester = display.substring(0, display.indexOf(':')).trim();
+        String worker = display.substring(display.indexOf(':') + 1).trim();
+        if (!isPlayerFacingName(requester)) {
+            return "rejected: requester side is not player-facing";
+        }
+        if (!isPlayerFacingName(worker)) {
+            return "rejected: worker side is not player-facing";
+        }
+        return "accepted: worker='" + worker + "'";
+    }
+
+    private static String safeState(IRequest<?> request) {
+        try {
+            return String.valueOf(request.getState());
+        } catch (RuntimeException ignored) {
+            return "unavailable";
+        }
+    }
+
+    private static int displayStackCount(IRequest<?> request) {
+        try {
+            return request.getDisplayStacks().size();
+        } catch (RuntimeException ignored) {
+            return -1;
+        }
+    }
+
+    private static int childCount(IRequest<?> request) {
+        try {
+            return request.hasChildren() ? request.getChildren().size() : 0;
+        } catch (RuntimeException ignored) {
+            return -1;
+        }
+    }
+
+    private static int dependencyCount(List<RequestTreeNode> nodes) {
+        int count = 0;
+        for (RequestTreeNode node : nodes) {
+            if (node.depth() > 0) {
+                count++;
+            }
+        }
+        return count;
+    }
+
+    private static String itemId(ItemStack stack) {
+        try {
+            return BuiltInRegistries.ITEM.getKey(stack.getItem()).toString();
+        } catch (RuntimeException ignored) {
+            return "unavailable";
+        }
+    }
+
+    private static String safeTaskStackName(IStackBasedTask task) {
+        try {
+            ItemStack stack = task.getTaskStack();
+            return stack.isEmpty() ? "empty" : stack.getHoverName().getString() + " " + itemId(stack);
+        } catch (RuntimeException ignored) {
+            return "unavailable";
+        }
+    }
+
+    private static int safeTaskDisplayCount(IStackBasedTask task) {
+        try {
+            return task.getDisplayCount();
+        } catch (RuntimeException ignored) {
+            return -1;
+        }
+    }
+
+    private static String safeTaskDisplayPrefix(IStackBasedTask task) {
+        try {
+            Component prefix = task.getDisplayPrefix();
+            return prefix == null ? "none" : prefix.getString();
+        } catch (RuntimeException ignored) {
+            return "unavailable";
+        }
+    }
+
+    private record WorkerDebug(Optional<String> name, String source) {
     }
 
     private static Collection<IRequest<?>> clipboardRootRequests(IColony colony) {
@@ -184,12 +475,15 @@ public final class RequestAnalysisService {
     }
 
     private static Optional<ItemStack> stackBasedTaskStack(IRequest<?> request) {
-        Optional<ItemStack> direct = stackBasedTaskStack(request instanceof IStackBasedTask task ? task : null);
-        if (direct.isPresent()) {
-            return direct;
+        return stackBasedTask(request).flatMap(RequestAnalysisService::stackBasedTaskStack);
+    }
+
+    private static Optional<IStackBasedTask> stackBasedTask(IRequest<?> request) {
+        if (request instanceof IStackBasedTask task) {
+            return Optional.of(task);
         }
         try {
-            return request.getRequestOfType(IStackBasedTask.class).flatMap(RequestAnalysisService::stackBasedTaskStack);
+            return request.getRequestOfType(IStackBasedTask.class);
         } catch (RuntimeException ignored) {
             return Optional.empty();
         }

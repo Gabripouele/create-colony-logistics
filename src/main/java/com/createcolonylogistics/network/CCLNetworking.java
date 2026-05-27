@@ -14,5 +14,10 @@ public final class CCLNetworking {
                 ClientboundSmartClipboardReportPacket.STREAM_CODEC,
                 ClientboundSmartClipboardReportPacket::handle
         );
+        registrar.playToServer(
+                ServerboundSmartClipboardDebugPacket.TYPE,
+                ServerboundSmartClipboardDebugPacket.STREAM_CODEC,
+                ServerboundSmartClipboardDebugPacket::handle
+        );
     }
 }
