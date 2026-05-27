@@ -3,6 +3,11 @@ package com.createcolonylogistics.client;
 import com.createcolonylogistics.clipboard.SmartClipboardReport;
 import com.createcolonylogistics.network.ServerboundSmartClipboardDebugPacket;
 import com.createcolonylogistics.network.ServerboundSmartClipboardScrollPacket;
+import com.minecolonies.api.colony.buildings.views.IBuildingView;
+import com.minecolonies.api.colony.workorders.IWorkOrderView;
+import com.minecolonies.api.items.component.BuildingId;
+import com.minecolonies.core.colony.buildings.moduleviews.BuildingResourcesModuleView;
+import com.minecolonies.core.colony.buildings.utils.BuildingBuilderResource;
 import net.minecraft.client.Minecraft;
 import net.minecraft.client.gui.GuiGraphics;
 import net.minecraft.client.gui.components.Renderable;
@@ -62,10 +67,14 @@ public class SmartClipboardScreen extends Screen {
     private boolean importantOnly;
     private Tab activeTab = Tab.REQUESTS;
     private int selectedScroll;
+    private static Tab rememberedTab = Tab.REQUESTS;
+    private static int rememberedSelectedScroll;
 
     public SmartClipboardScreen(SmartClipboardReport report) {
         super(Component.translatable("screen.create_colony_logistics.smart_clipboard.title"));
         this.report = report;
+        this.activeTab = rememberedTab;
+        this.selectedScroll = clampSelectedScroll(report, rememberedSelectedScroll);
     }
 
     @Override
@@ -231,17 +240,35 @@ public class SmartClipboardScreen extends Screen {
         graphics.renderItem(selected, x, y);
         graphics.drawString(font, truncate(selected.getHoverName(), LIST_WIDTH - 22), x + 22, y + 4, TEXT, false);
         y += 24;
-        List<Component> tooltip = selected.getTooltipLines(Item.TooltipContext.of(Minecraft.getInstance().level), Minecraft.getInstance().player, TooltipFlag.NORMAL);
-        for (Component line : tooltip) {
-            String text = line.getString();
-            if (text.isBlank()) {
-                y += 4;
-                continue;
-            }
-            graphics.drawString(font, truncate(Component.literal(text), LIST_WIDTH), x, y, MUTED, false);
+        y = renderSelectedResourceScrollContent(graphics, selected, x, y);
+        return Math.max(0, y - (listTop - scroll));
+    }
+
+    private int renderSelectedResourceScrollContent(GuiGraphics graphics, ItemStack scroll, int x, int y) {
+        ResourceScrollContent content = ResourceScrollContent.from(scroll);
+        if (content.resources().isEmpty()) {
+            graphics.drawString(font, truncate(Component.translatable("screen.create_colony_logistics.smart_clipboard.scroll_unregistered"), LIST_WIDTH), x, y, MUTED, false);
+            return y + 14;
+        }
+
+        graphics.drawString(font, truncate(Component.literal(content.buildingTitle()), LIST_WIDTH), x, y, TEXT, false);
+        y += LINE_HEIGHT;
+        if (!content.projectTitle().isBlank()) {
+            graphics.drawString(font, truncate(Component.literal(content.projectTitle()), LIST_WIDTH), x, y, MUTED, false);
             y += LINE_HEIGHT;
         }
-        return Math.max(0, y - (listTop - scroll));
+        graphics.drawString(font, truncate(Component.translatable("screen.create_colony_logistics.smart_clipboard.progress", content.suppliedPercent(), content.usedPercent()), LIST_WIDTH), x, y, MUTED, false);
+        y += LINE_HEIGHT + 3;
+
+        for (ResourceLine resource : content.resources()) {
+            graphics.renderItem(resource.stack(), x, y);
+            graphics.drawString(font, truncate(Component.literal(resource.name()), LIST_WIDTH - 22), x + 22, y + 1, TEXT, false);
+            int statusColor = resource.missing() < 0 ? 0xFFFF5555 : MUTED;
+            graphics.drawString(font, truncate(Component.translatable("screen.create_colony_logistics.smart_clipboard.missing", resource.missing()), LIST_WIDTH - 22), x + 22, y + 11, statusColor, false);
+            graphics.drawString(font, truncate(Component.translatable("screen.create_colony_logistics.smart_clipboard.supplied", resource.available(), resource.required()), LIST_WIDTH - 22), x + 22, y + 21, statusColor, false);
+            y += 34;
+        }
+        return y;
     }
 
     private void renderEntry(GuiGraphics graphics, SmartClipboardReport.Entry entry, int index, int x, int y, int width, int height) {
@@ -386,11 +413,13 @@ public class SmartClipboardScreen extends Screen {
     private boolean handleTabClick(double mouseX, double mouseY) {
         if (tabHit(mouseX, mouseY, leftPos + 42, topPos - TAB_HEIGHT + 4)) {
             activeTab = Tab.REQUESTS;
+            rememberState();
             scroll = 0;
             return true;
         }
         if (tabHit(mouseX, mouseY, leftPos + 103, topPos - TAB_HEIGHT + 4)) {
             activeTab = Tab.SCROLLS;
+            rememberState();
             scroll = 0;
             return true;
         }
@@ -410,11 +439,18 @@ public class SmartClipboardScreen extends Screen {
             if (mouseX >= slotX && mouseX < slotX + 18 && mouseY >= slotY && mouseY < slotY + 18) {
                 ItemStack stack = i < report.resourceScrolls().size() ? report.resourceScrolls().get(i) : ItemStack.EMPTY;
                 if (stack.isEmpty()) {
+                    activeTab = Tab.SCROLLS;
+                    selectedScroll = i;
+                    rememberState();
                     PacketDistributor.sendToServer(new ServerboundSmartClipboardScrollPacket(ServerboundSmartClipboardScrollPacket.INSERT, i));
                 } else if (button == 1 || Screen.hasShiftDown()) {
+                    activeTab = Tab.SCROLLS;
+                    selectedScroll = nearestSelectedAfterRemoval(i);
+                    rememberState();
                     PacketDistributor.sendToServer(new ServerboundSmartClipboardScrollPacket(ServerboundSmartClipboardScrollPacket.REMOVE, i));
                 } else {
                     selectedScroll = i;
+                    rememberState();
                 }
                 return true;
             }
@@ -775,6 +811,37 @@ public class SmartClipboardScreen extends Screen {
         return count;
     }
 
+    private static int clampSelectedScroll(SmartClipboardReport report, int preferred) {
+        if (preferred >= 0 && preferred < report.resourceScrolls().size() && !report.resourceScrolls().get(preferred).isEmpty()) {
+            return preferred;
+        }
+        for (int i = 0; i < report.resourceScrolls().size(); i++) {
+            if (!report.resourceScrolls().get(i).isEmpty()) {
+                return i;
+            }
+        }
+        return Math.max(0, Math.min(preferred, 8));
+    }
+
+    private int nearestSelectedAfterRemoval(int removedSlot) {
+        for (int i = removedSlot + 1; i < report.resourceScrolls().size(); i++) {
+            if (!report.resourceScrolls().get(i).isEmpty()) {
+                return i;
+            }
+        }
+        for (int i = removedSlot - 1; i >= 0; i--) {
+            if (!report.resourceScrolls().get(i).isEmpty()) {
+                return i;
+            }
+        }
+        return Math.max(0, Math.min(removedSlot, 8));
+    }
+
+    private void rememberState() {
+        rememberedTab = activeTab;
+        rememberedSelectedScroll = selectedScroll;
+    }
+
     private ItemStack displayStack(SmartClipboardReport.Entry entry) {
         List<ItemStack> stacks = entry.displayStacks().isEmpty() ? List.of(entry.requestedStack()) : entry.displayStacks();
         if (stacks.size() == 1) {
@@ -923,6 +990,55 @@ public class SmartClipboardScreen extends Screen {
     private enum Tab {
         REQUESTS,
         SCROLLS
+    }
+
+    private record ResourceScrollContent(String buildingTitle, String projectTitle, int suppliedPercent, int usedPercent, List<ResourceLine> resources) {
+        static ResourceScrollContent from(ItemStack scroll) {
+            try {
+                IBuildingView building = BuildingId.readBuildingViewFromItemStack(scroll);
+                if (building == null) {
+                    return empty();
+                }
+                BuildingResourcesModuleView module = building.getModuleViewByType(BuildingResourcesModuleView.class);
+                if (module == null) {
+                    return empty();
+                }
+                List<ResourceLine> resources = module.getResources().values().stream()
+                        .map(ResourceLine::from)
+                        .toList();
+                int requiredTotal = 0;
+                int suppliedTotal = 0;
+                for (ResourceLine resource : resources) {
+                    requiredTotal += Math.max(0, resource.required());
+                    suppliedTotal += Math.min(Math.max(0, resource.available()), Math.max(0, resource.required()));
+                }
+                int suppliedPercent = requiredTotal <= 0 ? 0 : suppliedTotal * 100 / requiredTotal;
+                String project = "";
+                if (module.getWorkOrderId() > -1) {
+                    IWorkOrderView workOrder = module.getBuildingView().getColony().getWorkOrder(module.getWorkOrderId());
+                    if (workOrder != null) {
+                        project = workOrder.getDisplayName().getString().replace("\n", "");
+                    }
+                }
+                return new ResourceScrollContent(building.getBuildingDisplayName(), project, suppliedPercent, module.getProgress(), resources);
+            } catch (RuntimeException ignored) {
+                return empty();
+            }
+        }
+
+        private static ResourceScrollContent empty() {
+            return new ResourceScrollContent("", "", 0, 0, List.of());
+        }
+    }
+
+    private record ResourceLine(ItemStack stack, String name, int missing, int available, int required) {
+        static ResourceLine from(BuildingBuilderResource resource) {
+            ItemStack stack = resource.getItemStack().copyWithCount(1);
+            int missing = resource.getMissingFromPlayer();
+            int available = resource.getAvailable();
+            int required = resource.getAmount();
+            return new ResourceLine(stack, resource.getName(), missing, available, required);
+        }
     }
 
     private String humanizeDimension(String id) {
