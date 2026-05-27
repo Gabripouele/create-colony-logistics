@@ -41,6 +41,7 @@ public final class RequestAnalysisService {
     public static AnalysisResult analyze(ServerLevel level, IColony colony, int limit) {
         Map<String, List<RequestReportEntry>> grouped = new LinkedHashMap<>();
         Set<IToken<?>> lessImportantRequests = lessImportantRequests(colony);
+        WorkerGroups workerGroups = WorkerGroups.from(colony);
         int reported = 0;
         int activeRequestCount = 0;
         boolean capped = false;
@@ -60,7 +61,7 @@ public final class RequestAnalysisService {
             }
 
             IBuilding requesterBuilding = buildingForRequest(colony, request).orElse(null);
-            RequestReportEntry entry = inspectRequest(level, colony, requesterBuilding, request, requestedStack.get(), !lessImportantRequests.contains(request.getId()));
+            RequestReportEntry entry = inspectRequest(level, colony, requesterBuilding, request, requestedStack.get(), !lessImportantRequests.contains(request.getId()), workerGroups);
             grouped.computeIfAbsent(entry.requesterName(), ignored -> new ArrayList<>()).add(entry);
             reported++;
         }
@@ -89,6 +90,7 @@ public final class RequestAnalysisService {
 
         IRequest<?> currentRequest = request.get();
         IBuilding building = buildingForRequest(colony, currentRequest).orElse(null);
+        WorkerGroups workerGroups = WorkerGroups.from(colony);
         Optional<ItemStack> requestedStack = requestedStack(currentRequest);
         boolean domumStack = requestedStack.map(DomumOrnamentumRequestInspector::isDomumOrnamentumStack).orElse(false);
         List<RequestTreeNode> graphTree = requestTree(manager, currentRequest, 0, 16);
@@ -125,9 +127,17 @@ public final class RequestAnalysisService {
                 owningWorker.name().orElse("none"),
                 owningWorker.name().isPresent(),
                 owningWorker.reason());
+        WorkerGroupInheritance groupInheritance = workerGroups.inherit(building, minimumStockRequest);
+        CreateColonyLogistics.LOGGER.info("[SmartClipboardDebug] WorkerGroup: building={} candidates={} inherit={} worker={} sourceToken={} reason={}",
+                buildingGroupId(building),
+                groupInheritance.candidates(),
+                groupInheritance.name().isPresent(),
+                groupInheritance.name().orElse("none"),
+                groupInheritance.sourceToken(),
+                groupInheritance.reason());
 
         dumpParentChain(colony, manager, building, currentRequest);
-        WorkerDebug workerDebug = workerDebug(building, manager, currentRequest);
+        WorkerDebug workerDebug = workerDebug(building, manager, currentRequest, workerGroups);
         CreateColonyLogistics.LOGGER.info("[SmartClipboardDebug] Worker final: {} source={}", workerDebug.name().orElse("none"), workerDebug.source());
         CreateColonyLogistics.LOGGER.info("[SmartClipboardDebug] Dependencies: source={} graphNodes={} graphDependencyNodes={} childTokens={} syntheticNodes={} serializedClientDependencyNodes={}",
                 dependencySource, graphTree.size(), dependencyCount(graphTree), childCount(currentRequest), cutterTree.size(), clientDependencyCount);
@@ -217,7 +227,7 @@ public final class RequestAnalysisService {
         }
     }
 
-    private static WorkerDebug workerDebug(IBuilding building, IRequestManager manager, IRequest<?> request) {
+    private static WorkerDebug workerDebug(IBuilding building, IRequestManager manager, IRequest<?> request, WorkerGroups workerGroups) {
         if (building != null) {
             Optional<String> directWorker = workerName(building, request.getId());
             if (directWorker.isPresent()) {
@@ -243,13 +253,13 @@ public final class RequestAnalysisService {
                 }
             }
         }
-        OwningWorker owningWorker = owningOrderWorker(building, manager, request);
-        if (owningWorker.name().isPresent()) {
-            return new WorkerDebug(owningWorker.name(), "owning-order " + owningWorker.describe());
-        }
         Optional<String> requesterDisplayWorker = requesterDisplayWorker(manager, request);
         if (requesterDisplayWorker.isPresent()) {
             return new WorkerDebug(requesterDisplayWorker, "requester-display fallback");
+        }
+        WorkerGroupInheritance groupInheritance = workerGroups.inherit(building, false);
+        if (groupInheritance.name().isPresent()) {
+            return new WorkerDebug(groupInheritance.name(), "worker-group " + groupInheritance.describe());
         }
         return new WorkerDebug(Optional.empty(), "none");
     }
@@ -379,6 +389,98 @@ public final class RequestAnalysisService {
 
         String describe() {
             return "token=" + token + " class=" + requestClass + " requesterDisplay='" + requesterDisplay + "' reason=" + reason;
+        }
+    }
+
+    private static final class WorkerGroups {
+        private final Map<String, WorkerGroup> groups;
+
+        private WorkerGroups(Map<String, WorkerGroup> groups) {
+            this.groups = groups;
+        }
+
+        static WorkerGroups from(IColony colony) {
+            Map<String, WorkerGroup> groups = new LinkedHashMap<>();
+            for (IBuilding building : colony.getBuildingManager().getBuildings().values()) {
+                String groupId = buildingGroupId(building);
+                WorkerGroup group = groups.computeIfAbsent(groupId, ignored -> new WorkerGroup(groupId, buildingDisplayName(building)));
+                try {
+                    for (ICitizenData citizen : building.getAllAssignedCitizen()) {
+                        for (IRequest<?> request : building.getOpenRequests(citizen.getId())) {
+                            if (request != null && isActive(request.getState())) {
+                                group.add(citizen.getName(), request);
+                            }
+                        }
+                    }
+                } catch (RuntimeException ignored) {
+                    // Some buildings do not expose worker request state during every tick.
+                }
+            }
+            return new WorkerGroups(groups);
+        }
+
+        WorkerGroupInheritance inherit(IBuilding building, boolean minimumStockRequest) {
+            if (minimumStockRequest) {
+                return WorkerGroupInheritance.rejected("minimum stock");
+            }
+            String groupId = buildingGroupId(building);
+            WorkerGroup group = groups.get(groupId);
+            if (group == null) {
+                return WorkerGroupInheritance.rejected("no building group");
+            }
+            return group.inherit();
+        }
+    }
+
+    private static final class WorkerGroup {
+        private final String id;
+        private final String buildingName;
+        private final Map<String, WorkerCandidate> candidates = new LinkedHashMap<>();
+
+        private WorkerGroup(String id, String buildingName) {
+            this.id = id;
+            this.buildingName = buildingName;
+        }
+
+        void add(String workerName, IRequest<?> request) {
+            if (workerName == null || workerName.isBlank()) {
+                return;
+            }
+            candidates.putIfAbsent(workerName, new WorkerCandidate(workerName, request.getId().toString(), className(request)));
+        }
+
+        WorkerGroupInheritance inherit() {
+            if (candidates.isEmpty()) {
+                return WorkerGroupInheritance.rejected("no candidates");
+            }
+            if (candidates.size() > 1) {
+                return new WorkerGroupInheritance(Optional.empty(), "none", id, buildingName, candidates(), "multiple workers");
+            }
+            WorkerCandidate candidate = candidates.values().iterator().next();
+            return new WorkerGroupInheritance(Optional.of(candidate.workerName()), candidate.token(), id, buildingName, candidates(), "unique worker candidate");
+        }
+
+        String candidates() {
+            if (candidates.isEmpty()) {
+                return "[]";
+            }
+            return candidates.values().stream()
+                    .map(candidate -> candidate.workerName() + "@" + candidate.token() + "(" + candidate.requestClass() + ")")
+                    .toList()
+                    .toString();
+        }
+    }
+
+    private record WorkerCandidate(String workerName, String token, String requestClass) {
+    }
+
+    private record WorkerGroupInheritance(Optional<String> name, String sourceToken, String groupId, String buildingName, String candidates, String reason) {
+        static WorkerGroupInheritance rejected(String reason) {
+            return new WorkerGroupInheritance(Optional.empty(), "none", "none", "none", "[]", reason);
+        }
+
+        String describe() {
+            return "building=" + buildingName + " group=" + groupId + " candidates=" + candidates + " sourceToken=" + sourceToken + " reason=" + reason;
         }
     }
 
@@ -530,7 +632,7 @@ public final class RequestAnalysisService {
         return Optional.empty();
     }
 
-    private static RequestReportEntry inspectRequest(ServerLevel level, IColony colony, IBuilding building, IRequest<?> request, ItemStack requestedStack, boolean important) {
+    private static RequestReportEntry inspectRequest(ServerLevel level, IColony colony, IBuilding building, IRequest<?> request, ItemStack requestedStack, boolean important, WorkerGroups workerGroups) {
         boolean minimumStockRequest = isMinimumStockRequest(request);
         boolean domumRequest = DomumOrnamentumRequestInspector.isDomumOrnamentumStack(requestedStack);
         ColonyProductionInspector.ProductionKnowledge knowledge = domumRequest
@@ -553,7 +655,7 @@ public final class RequestAnalysisService {
         return new RequestReportEntry(
                 requesterDisplayName(colony.getRequestManager(), request, building),
                 building == null ? Optional.empty() : buildingPosition(building),
-                minimumStockRequest ? Optional.empty() : workerName(building, colony.getRequestManager(), request),
+                minimumStockRequest ? Optional.empty() : workerName(building, colony.getRequestManager(), request, workerGroups),
                 dimensionName(request),
                 resolverName(colony, request),
                 request.getId().toString(),
@@ -740,7 +842,16 @@ public final class RequestAnalysisService {
         }
     }
 
-    private static Optional<String> workerName(IBuilding building, IRequestManager manager, IRequest<?> request) {
+    private static String buildingGroupId(IBuilding building) {
+        if (building == null) {
+            return "none";
+        }
+        return buildingPosition(building)
+                .map(BlockPos::toShortString)
+                .orElseGet(() -> buildingDisplayName(building));
+    }
+
+    private static Optional<String> workerName(IBuilding building, IRequestManager manager, IRequest<?> request, WorkerGroups workerGroups) {
         if (building != null) {
             Optional<String> directWorker = workerName(building, request.getId());
             if (directWorker.isPresent()) {
@@ -768,11 +879,11 @@ public final class RequestAnalysisService {
                 }
             }
         }
-        Optional<String> owningWorker = owningOrderWorker(building, manager, request).name();
-        if (owningWorker.isPresent()) {
-            return owningWorker;
+        Optional<String> requesterDisplayWorker = requesterDisplayWorker(manager, request);
+        if (requesterDisplayWorker.isPresent()) {
+            return requesterDisplayWorker;
         }
-        return requesterDisplayWorker(manager, request);
+        return workerGroups.inherit(building, false).name();
     }
 
     private static Optional<String> workerName(IBuilding building, IToken<?> requestToken) {
