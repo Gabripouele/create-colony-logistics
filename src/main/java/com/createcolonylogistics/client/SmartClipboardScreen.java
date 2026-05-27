@@ -30,6 +30,7 @@ public class SmartClipboardScreen extends Screen {
     private static final int LIST_BOTTOM = 294;
     private static final int SCROLL_X = 219;
     private static final int IMPORTANT_BUTTON_SIZE = 11;
+    private static final int TREE_INDENT = 9;
     private static final int ROW_GAP = 2;
     private static final int LINE_HEIGHT = 10;
     private static final int COLLAPSED_HEIGHT = 28;
@@ -104,15 +105,20 @@ public class SmartClipboardScreen extends Screen {
     private void renderImportantButton(GuiGraphics graphics, int mouseX, int mouseY) {
         int x = importantButtonX();
         int y = importantButtonY();
-        int fill = importantOnly ? 0x80513917 : 0x403C2412;
+        int fill = 0x805E5A52;
+        int bangColor = importantOnly ? 0xFFFF5555 : 0xFF55DD55;
         graphics.fill(x, y, x + IMPORTANT_BUTTON_SIZE, y + IMPORTANT_BUTTON_SIZE, fill);
         graphics.fill(x, y, x + IMPORTANT_BUTTON_SIZE, y + 1, SEPARATOR);
         graphics.fill(x, y + IMPORTANT_BUTTON_SIZE - 1, x + IMPORTANT_BUTTON_SIZE, y + IMPORTANT_BUTTON_SIZE, SEPARATOR);
         graphics.fill(x, y, x + 1, y + IMPORTANT_BUTTON_SIZE, SEPARATOR);
         graphics.fill(x + IMPORTANT_BUTTON_SIZE - 1, y, x + IMPORTANT_BUTTON_SIZE, y + IMPORTANT_BUTTON_SIZE, SEPARATOR);
-        graphics.drawString(font, "!", x + 4, y + 1, importantOnly ? TEXT : HEADER_TEXT, false);
+        int textX = x + (IMPORTANT_BUTTON_SIZE - font.width("!")) / 2;
+        int textY = y + (IMPORTANT_BUTTON_SIZE - font.lineHeight) / 2;
+        graphics.drawString(font, "!", textX, textY, bangColor, false);
         if (mouseX >= x && mouseX < x + IMPORTANT_BUTTON_SIZE && mouseY >= y && mouseY < y + IMPORTANT_BUTTON_SIZE) {
-            graphics.renderTooltip(font, Component.translatable("screen.create_colony_logistics.smart_clipboard.toggle_important"), mouseX, mouseY);
+            graphics.renderTooltip(font, Component.translatable(importantOnly
+                    ? "screen.create_colony_logistics.smart_clipboard.filtering_important"
+                    : "screen.create_colony_logistics.smart_clipboard.filtering_all"), mouseX, mouseY);
         }
     }
 
@@ -169,9 +175,8 @@ public class SmartClipboardScreen extends Screen {
             detailY = value(graphics, x + 8, detailY, "screen.create_colony_logistics.smart_clipboard.resolver", entry.resolverName().map(this::humanizeResolver).orElse(null));
             List<SmartClipboardReport.RequestTreeNode> dependencies = dependencyNodes(entry);
             if (!dependencies.isEmpty()) {
-                detailY = label(graphics, x + 8, detailY + 2, "screen.create_colony_logistics.smart_clipboard.needs_label");
                 for (SmartClipboardReport.RequestTreeNode node : dependencies) {
-                    detailY = treeValue(graphics, x + 8, detailY, node);
+                    detailY = treeValue(graphics, x + 4, detailY + 2, node);
                 }
             } else {
                 detailY = value(graphics, x + 8, detailY + 2, "screen.create_colony_logistics.smart_clipboard.needs", Component.translatable("screen.create_colony_logistics.smart_clipboard.none").getString());
@@ -205,22 +210,22 @@ public class SmartClipboardScreen extends Screen {
 
     private int treeValue(GuiGraphics graphics, int x, int y, SmartClipboardReport.RequestTreeNode node) {
         int visibleDepth = Math.max(1, node.depth());
-        int indent = Math.min(48, (visibleDepth - 1) * 12);
+        int indent = Math.min(36, (visibleDepth - 1) * TREE_INDENT);
         renderTreeConnectors(graphics, x, y, visibleDepth, indent);
         ItemStack stack = node.stack();
         if (!stack.isEmpty()) {
-            graphics.renderItem(stack, x + indent + 8, y);
+            graphics.renderItem(stack, x + indent + 7, y);
         }
         String label = treeNodeText(node);
-        graphics.drawString(font, truncate(Component.literal(label), Math.max(40, leftPos + LIST_X + LIST_WIDTH - x - indent - 30)),
-                x + indent + 28, y + 4, MUTED, false);
+        graphics.drawString(font, truncate(Component.literal(label), Math.max(40, leftPos + LIST_X + LIST_WIDTH - x - indent - 27)),
+                x + indent + 26, y + 4, MUTED, false);
         return y + 18;
     }
 
     private void renderTreeConnectors(GuiGraphics graphics, int x, int y, int visibleDepth, int indent) {
         int branchY = y + 8;
         for (int level = 1; level < visibleDepth; level++) {
-            int lineX = x + Math.min(48, (level - 1) * 12) + 3;
+            int lineX = x + Math.min(36, (level - 1) * TREE_INDENT) + 3;
             graphics.fill(lineX, y, lineX + 1, y + 18, DIM);
         }
         int branchX = x + indent + 3;
@@ -238,7 +243,6 @@ public class SmartClipboardScreen extends Screen {
         height += valueLineHeight(entry.resolverName().orElse(null));
         List<SmartClipboardReport.RequestTreeNode> dependencies = dependencyNodes(entry);
         if (!dependencies.isEmpty()) {
-            height += LINE_HEIGHT + 2;
             height += dependencies.size() * 18;
         } else {
             height += LINE_HEIGHT + 2;
@@ -419,7 +423,7 @@ public class SmartClipboardScreen extends Screen {
     }
 
     private int importantButtonY() {
-        return topPos + 25;
+        return topPos + 14;
     }
 
     private String treeNodeText(SmartClipboardReport.RequestTreeNode node) {
