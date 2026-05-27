@@ -8,6 +8,7 @@ import com.minecolonies.api.colony.jobs.IJob;
 import com.minecolonies.api.colony.requestsystem.request.IRequest;
 import com.minecolonies.api.colony.requestsystem.request.RequestState;
 import com.minecolonies.api.colony.requestsystem.requestable.IDeliverable;
+import com.minecolonies.api.colony.requestsystem.requestable.IStackBasedTask;
 import com.minecolonies.api.colony.requestsystem.token.IToken;
 import com.minecolonies.api.colony.requestsystem.manager.IRequestManager;
 import net.minecraft.core.BlockPos;
@@ -106,6 +107,11 @@ public final class RequestAnalysisService {
     }
 
     private static Optional<ItemStack> requestedStack(IRequest<?> request) {
+        Optional<ItemStack> stackBasedTask = stackBasedTaskStack(request);
+        if (stackBasedTask.isPresent()) {
+            return stackBasedTask;
+        }
+
         Object requestable = request.getRequest();
         if (requestable instanceof IDeliverable deliverable) {
             ItemStack result = deliverable.getResult();
@@ -120,6 +126,33 @@ public final class RequestAnalysisService {
             }
         }
 
+        return Optional.empty();
+    }
+
+    private static Optional<ItemStack> stackBasedTaskStack(IRequest<?> request) {
+        Optional<ItemStack> direct = stackBasedTaskStack(request instanceof IStackBasedTask task ? task : null);
+        if (direct.isPresent()) {
+            return direct;
+        }
+        try {
+            return request.getRequestOfType(IStackBasedTask.class).flatMap(RequestAnalysisService::stackBasedTaskStack);
+        } catch (RuntimeException ignored) {
+            return Optional.empty();
+        }
+    }
+
+    private static Optional<ItemStack> stackBasedTaskStack(IStackBasedTask task) {
+        if (task == null) {
+            return Optional.empty();
+        }
+        try {
+            ItemStack stack = task.getTaskStack();
+            if (!stack.isEmpty()) {
+                return Optional.of(stack.copyWithCount(Math.max(1, task.getDisplayCount())));
+            }
+        } catch (RuntimeException ignored) {
+            // Fall through to display stacks.
+        }
         return Optional.empty();
     }
 
