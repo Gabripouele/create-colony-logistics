@@ -117,6 +117,14 @@ public final class RequestAnalysisService {
         CreateColonyLogistics.LOGGER.info("[SmartClipboardDebug] RequesterDisplayFallback current: {}",
                 requesterDisplayWorkerDiagnostics(manager, currentRequest));
         CreateColonyLogistics.LOGGER.info("[SmartClipboardDebug] Worker direct: {}", building == null ? "none (no building)" : workerName(building, currentRequest.getId()).orElse("none"));
+        OwningWorker owningWorker = owningOrderWorker(building, manager, currentRequest);
+        CreateColonyLogistics.LOGGER.info("[SmartClipboardDebug] OwningOrder: token={} class={} requesterDisplay='{}' worker={} inherited={} reason={}",
+                owningWorker.token(),
+                owningWorker.requestClass(),
+                owningWorker.requesterDisplay(),
+                owningWorker.name().orElse("none"),
+                owningWorker.name().isPresent(),
+                owningWorker.reason());
 
         dumpParentChain(colony, manager, building, currentRequest);
         WorkerDebug workerDebug = workerDebug(building, manager, currentRequest);
@@ -234,6 +242,10 @@ public final class RequestAnalysisService {
                     break;
                 }
             }
+        }
+        OwningWorker owningWorker = owningOrderWorker(building, manager, request);
+        if (owningWorker.name().isPresent()) {
+            return new WorkerDebug(owningWorker.name(), "owning-order " + owningWorker.describe());
         }
         Optional<String> requesterDisplayWorker = requesterDisplayWorker(manager, request);
         if (requesterDisplayWorker.isPresent()) {
@@ -358,6 +370,16 @@ public final class RequestAnalysisService {
     }
 
     private record WorkerDebug(Optional<String> name, String source) {
+    }
+
+    private record OwningWorker(Optional<String> name, String token, String requestClass, String requesterDisplay, String reason) {
+        static OwningWorker none(String reason) {
+            return new OwningWorker(Optional.empty(), "none", "none", "none", reason);
+        }
+
+        String describe() {
+            return "token=" + token + " class=" + requestClass + " requesterDisplay='" + requesterDisplay + "' reason=" + reason;
+        }
     }
 
     private static Collection<IRequest<?>> clipboardRootRequests(IColony colony) {
@@ -746,6 +768,10 @@ public final class RequestAnalysisService {
                 }
             }
         }
+        Optional<String> owningWorker = owningOrderWorker(building, manager, request).name();
+        if (owningWorker.isPresent()) {
+            return owningWorker;
+        }
         return requesterDisplayWorker(manager, request);
     }
 
@@ -755,6 +781,58 @@ public final class RequestAnalysisService {
         } catch (RuntimeException ignored) {
             return Optional.empty();
         }
+    }
+
+    private static OwningWorker owningOrderWorker(IBuilding building, IRequestManager manager, IRequest<?> request) {
+        if (building == null) {
+            return OwningWorker.none("no building");
+        }
+        try {
+            for (ICitizenData citizen : building.getAllAssignedCitizen()) {
+                Collection<IRequest<?>> openRequests = building.getOpenRequests(citizen.getId());
+                for (IRequest<?> openRequest : openRequests) {
+                    if (openRequest == null || !isActive(openRequest.getState())) {
+                        continue;
+                    }
+                    if (requestContainsToken(manager, openRequest, request.getId(), 0)) {
+                        return new OwningWorker(
+                                Optional.of(citizen.getName()),
+                                openRequest.getId().toString(),
+                                className(openRequest),
+                                requesterDisplay(manager, openRequest),
+                                openRequest.getId().toString().equals(request.getId().toString())
+                                        ? "worker open request token"
+                                        : "worker open request child graph"
+                        );
+                    }
+                }
+            }
+        } catch (RuntimeException ignored) {
+            return OwningWorker.none("building worker open requests unavailable");
+        }
+        return OwningWorker.none("no worker open request contains token");
+    }
+
+    private static boolean requestContainsToken(IRequestManager manager, IRequest<?> root, IToken<?> token, int depth) {
+        if (root == null || token == null || depth > 32) {
+            return false;
+        }
+        if (root.getId().toString().equals(token.toString())) {
+            return true;
+        }
+        if (!root.hasChildren()) {
+            return false;
+        }
+        for (IToken<?> child : root.getChildren()) {
+            try {
+                if (requestContainsToken(manager, manager.getRequestForToken(child), token, depth + 1)) {
+                    return true;
+                }
+            } catch (RuntimeException ignored) {
+                // Request may resolve while scanning.
+            }
+        }
+        return false;
     }
 
     private static Optional<String> requesterDisplayWorker(IRequestManager manager, IRequest<?> request) {
