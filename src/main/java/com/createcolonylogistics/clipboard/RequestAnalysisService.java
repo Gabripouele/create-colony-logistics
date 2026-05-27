@@ -8,6 +8,7 @@ import com.minecolonies.api.colony.requestsystem.request.IRequest;
 import com.minecolonies.api.colony.requestsystem.request.RequestState;
 import com.minecolonies.api.colony.requestsystem.requestable.IDeliverable;
 import com.minecolonies.api.colony.requestsystem.token.IToken;
+import com.minecolonies.api.colony.requestsystem.manager.IRequestManager;
 import net.minecraft.core.BlockPos;
 import net.minecraft.network.chat.Component;
 import net.minecraft.resources.ResourceLocation;
@@ -110,6 +111,8 @@ public final class RequestAnalysisService {
                 buildingDisplayName(building),
                 buildingPosition(building),
                 workerName(building, request.getId()),
+                dimensionName(request),
+                resolverName(colony, request),
                 request.getId().toString(),
                 requestedStack.copy(),
                 requestedStack.getHoverName(),
@@ -120,7 +123,8 @@ public final class RequestAnalysisService {
                 DomumOrnamentumRequestInspector.exactComboFingerprint(requestedStack),
                 !knowledge.knownBy().isEmpty(),
                 knowledge.knownBy(),
-                knowledge.canLearn()
+                knowledge.canLearn(),
+                requestTree(colony.getRequestManager(), request, 0, 16)
         );
     }
 
@@ -171,6 +175,67 @@ public final class RequestAnalysisService {
         }
     }
 
+    private static Optional<String> dimensionName(IRequest<?> request) {
+        try {
+            return Optional.ofNullable(request.getRequester())
+                    .map(requester -> requester.getLocation().getDimension().location().toString());
+        } catch (RuntimeException ignored) {
+            return Optional.empty();
+        }
+    }
+
+    private static Optional<String> resolverName(IColony colony, IRequest<?> request) {
+        try {
+            Object resolver = colony.getRequestManager().getResolverForRequest(request.getId());
+            return Optional.ofNullable(resolver).map(value -> value.getClass().getSimpleName());
+        } catch (RuntimeException ignored) {
+            return Optional.empty();
+        }
+    }
+
+    private static List<RequestTreeNode> requestTree(IRequestManager manager, IRequest<?> request, int depth, int remaining) {
+        List<RequestTreeNode> nodes = new ArrayList<>();
+        if (remaining <= 0) {
+            return nodes;
+        }
+        nodes.add(new RequestTreeNode(depth, requestDisplayStack(request), requestCount(request), request.getShortDisplayString().getString()));
+        if (!request.hasChildren()) {
+            return nodes;
+        }
+        for (IToken<?> child : request.getChildren()) {
+            try {
+                IRequest<?> childRequest = manager.getRequestForToken(child);
+                if (childRequest != null) {
+                    nodes.addAll(requestTree(manager, childRequest, depth + 1, remaining - nodes.size()));
+                }
+            } catch (RuntimeException ignored) {
+                // Requests can be resolved while the report is being built.
+            }
+            if (nodes.size() >= remaining) {
+                break;
+            }
+        }
+        return nodes;
+    }
+
+    private static ItemStack requestDisplayStack(IRequest<?> request) {
+        Optional<ItemStack> stack = requestedStack(request);
+        if (stack.isPresent()) {
+            return stack.get();
+        }
+        for (ItemStack displayStack : request.getDisplayStacks()) {
+            if (!displayStack.isEmpty()) {
+                return displayStack.copy();
+            }
+        }
+        return ItemStack.EMPTY;
+    }
+
+    private static int requestCount(IRequest<?> request) {
+        Optional<ItemStack> stack = requestedStack(request);
+        return stack.map(ItemStack::getCount).orElse(1);
+    }
+
     public record AnalysisResult(String colonyName, int colonyId, int buildingCount, int activeRequestCount, Map<String, List<RequestReportEntry>> groupedEntries, int reportedCount, boolean capped) {
     }
 
@@ -178,6 +243,8 @@ public final class RequestAnalysisService {
             String requesterName,
             Optional<BlockPos> requesterPosition,
             Optional<String> workerName,
+            Optional<String> dimensionName,
+            Optional<String> resolverName,
             String requestToken,
             ItemStack requestedStack,
             Component requestedItemName,
@@ -188,7 +255,16 @@ public final class RequestAnalysisService {
             String exactComboFingerprint,
             boolean exactComboTaught,
             List<String> knownBy,
-            List<String> canLearn
+            List<String> canLearn,
+            List<RequestTreeNode> requestTree
+    ) {
+    }
+
+    public record RequestTreeNode(
+            int depth,
+            ItemStack stack,
+            int count,
+            String label
     ) {
     }
 }

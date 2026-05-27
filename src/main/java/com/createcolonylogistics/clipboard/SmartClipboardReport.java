@@ -25,6 +25,8 @@ public record SmartClipboardReport(
                 entry.requesterName(),
                 entry.requesterPosition(),
                 entry.workerName(),
+                entry.dimensionName(),
+                entry.resolverName(),
                 entry.warehouseStock(),
                 entry.domumBlockId().toString(),
                 entry.cutterRecipe().map(Object::toString),
@@ -33,7 +35,10 @@ public record SmartClipboardReport(
                 entry.exactComboTaught(),
                 List.copyOf(entry.knownBy()),
                 List.copyOf(entry.canLearn()),
-                Optional.ofNullable(entry.requestToken()).filter(token -> !token.isBlank())
+                Optional.ofNullable(entry.requestToken()).filter(token -> !token.isBlank()),
+                entry.requestTree().stream()
+                        .map(node -> new RequestTreeNode(node.depth(), node.stack().copy(), node.count(), node.label()))
+                        .toList()
         ))));
 
         return new SmartClipboardReport(
@@ -85,6 +90,8 @@ public record SmartClipboardReport(
             String requestingBuildingName,
             Optional<BlockPos> requestingBuildingPos,
             Optional<String> requestingWorkerName,
+            Optional<String> dimensionName,
+            Optional<String> resolverName,
             int warehouseStock,
             String doBlockId,
             Optional<String> cutterRecipeId,
@@ -93,7 +100,8 @@ public record SmartClipboardReport(
             boolean exactComboAlreadyTaught,
             List<String> recipeKnownBy,
             List<String> canLearnCombo,
-            Optional<String> requestToken
+            Optional<String> requestToken,
+            List<RequestTreeNode> requestTree
     ) {
         private static Entry decode(RegistryFriendlyByteBuf buffer) {
             ItemStack requestedStack = ItemStack.OPTIONAL_STREAM_CODEC.decode(buffer);
@@ -101,6 +109,8 @@ public record SmartClipboardReport(
             String requestingBuildingName = buffer.readUtf();
             Optional<BlockPos> requestingBuildingPos = readOptionalBlockPos(buffer);
             Optional<String> requestingWorkerName = readOptionalString(buffer);
+            Optional<String> dimensionName = readOptionalString(buffer);
+            Optional<String> resolverName = readOptionalString(buffer);
             int warehouseStock = buffer.readVarInt();
             String doBlockId = buffer.readUtf();
             Optional<String> cutterRecipeId = readOptionalString(buffer);
@@ -110,9 +120,15 @@ public record SmartClipboardReport(
             List<String> recipeKnownBy = buffer.readList(FriendlyByteBuf::readUtf);
             List<String> canLearnCombo = buffer.readList(FriendlyByteBuf::readUtf);
             Optional<String> requestToken = readOptionalString(buffer);
+            int treeSize = buffer.readVarInt();
+            List<RequestTreeNode> requestTree = new ArrayList<>(treeSize);
+            for (int i = 0; i < treeSize; i++) {
+                requestTree.add(RequestTreeNode.decode(buffer));
+            }
             return new Entry(requestedStack, requestedCount, requestingBuildingName, requestingBuildingPos, requestingWorkerName,
+                    dimensionName, resolverName,
                     warehouseStock, doBlockId, cutterRecipeId, comboFingerprintShort, comboFingerprintFull,
-                    exactComboAlreadyTaught, recipeKnownBy, canLearnCombo, requestToken);
+                    exactComboAlreadyTaught, recipeKnownBy, canLearnCombo, requestToken, requestTree);
         }
 
         private void encode(RegistryFriendlyByteBuf buffer) {
@@ -121,6 +137,8 @@ public record SmartClipboardReport(
             buffer.writeUtf(requestingBuildingName);
             writeOptionalBlockPos(buffer, requestingBuildingPos);
             writeOptionalString(buffer, requestingWorkerName);
+            writeOptionalString(buffer, dimensionName);
+            writeOptionalString(buffer, resolverName);
             buffer.writeVarInt(warehouseStock);
             buffer.writeUtf(doBlockId);
             writeOptionalString(buffer, cutterRecipeId);
@@ -130,6 +148,33 @@ public record SmartClipboardReport(
             buffer.writeCollection(recipeKnownBy, FriendlyByteBuf::writeUtf);
             buffer.writeCollection(canLearnCombo, FriendlyByteBuf::writeUtf);
             writeOptionalString(buffer, requestToken);
+            buffer.writeVarInt(requestTree.size());
+            for (RequestTreeNode node : requestTree) {
+                node.encode(buffer);
+            }
+        }
+    }
+
+    public record RequestTreeNode(
+            int depth,
+            ItemStack stack,
+            int count,
+            String label
+    ) {
+        private static RequestTreeNode decode(RegistryFriendlyByteBuf buffer) {
+            return new RequestTreeNode(
+                    buffer.readVarInt(),
+                    ItemStack.OPTIONAL_STREAM_CODEC.decode(buffer),
+                    buffer.readVarInt(),
+                    buffer.readUtf()
+            );
+        }
+
+        private void encode(RegistryFriendlyByteBuf buffer) {
+            buffer.writeVarInt(depth);
+            ItemStack.OPTIONAL_STREAM_CODEC.encode(buffer, stack);
+            buffer.writeVarInt(count);
+            buffer.writeUtf(label);
         }
     }
 

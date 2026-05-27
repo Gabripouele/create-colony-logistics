@@ -5,6 +5,7 @@ import com.createcolonylogistics.config.ColonyLogisticsConfig;
 import com.createcolonylogistics.cache.ColonyStockCache;
 import com.createcolonylogistics.network.CCLNetworking;
 import com.createcolonylogistics.registry.CCLItems;
+import com.createcolonylogistics.registry.CCLMenus;
 import net.neoforged.bus.api.IEventBus;
 import net.neoforged.fml.ModContainer;
 import net.neoforged.fml.common.Mod;
@@ -20,6 +21,7 @@ public final class CreateColonyLogistics {
 
     public CreateColonyLogistics(IEventBus modEventBus, ModContainer modContainer) {
         CCLItems.register(modEventBus);
+        CCLMenus.register(modEventBus);
         modEventBus.addListener(CCLItems::addCreativeTabItems);
         modEventBus.addListener(CCLNetworking::registerPayloads);
         modContainer.registerConfig(ModConfig.Type.SERVER, ColonyLogisticsConfig.SPEC);
