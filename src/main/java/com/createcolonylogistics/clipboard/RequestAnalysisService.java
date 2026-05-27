@@ -219,8 +219,11 @@ public final class RequestAnalysisService {
         Optional<ResourceLocation> cutterRecipe = domumRequest
                 ? DomumOrnamentumRequestInspector.findCutterRecipe(level.getRecipeManager(), level.registryAccess(), requestedStack)
                 : Optional.empty();
+        // Pipeline priority: keep MineColonies' own request graph authoritative.
+        // Synthetic Domum Ornamentum cutter inputs are only supplemental when the
+        // request graph has no child dependency nodes to display.
         List<RequestTreeNode> tree = requestTree(colony.getRequestManager(), request, 0, 16);
-        if (domumRequest) {
+        if (domumRequest && !hasDependencyNodes(tree)) {
             List<RequestTreeNode> cutterTree = cutterRequirementTree(level, requestedStack);
             if (!cutterTree.isEmpty()) {
                 tree = cutterTree;
@@ -265,6 +268,10 @@ public final class RequestAnalysisService {
             nodes.add(new RequestTreeNode(1, stack, requirement.count(), "x" + Math.max(1, requirement.count()), stack.getHoverName().getString()));
         }
         return nodes;
+    }
+
+    private static boolean hasDependencyNodes(List<RequestTreeNode> nodes) {
+        return nodes.stream().anyMatch(node -> node.depth() > 0);
     }
 
     private static Optional<IBuilding> buildingForRequest(IColony colony, IRequest<?> request) {
