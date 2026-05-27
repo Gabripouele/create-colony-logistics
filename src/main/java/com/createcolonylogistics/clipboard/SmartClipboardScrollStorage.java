@@ -51,15 +51,22 @@ public final class SmartClipboardScrollStorage {
     }
 
     public static boolean insertFirstResourceScroll(ServerPlayer player, ItemStack clipboard) {
+        return insertResourceScroll(player, clipboard, ItemStack.EMPTY);
+    }
+
+    public static boolean insertResourceScroll(ServerPlayer player, ItemStack clipboard, ItemStack scrollSnapshot) {
         List<ItemStack> scrolls = read(clipboard);
         int target = firstEmptySlot(scrolls);
         if (target < 0) {
             return false;
         }
+        ItemStack storedSnapshot = isResourceScroll(scrollSnapshot) ? scrollSnapshot.copyWithCount(1) : ItemStack.EMPTY;
         for (int i = 0; i < player.getInventory().getContainerSize(); i++) {
             ItemStack stack = player.getInventory().getItem(i);
             if (isResourceScroll(stack)) {
-                ItemStack stored = stack.copyWithCount(1);
+                // MineColonies' Resource Scroll link data is the authoritative ItemStack state used by its window.
+                // Preserve the client-selected stack snapshot when provided, while still consuming a real server item.
+                ItemStack stored = storedSnapshot.isEmpty() ? stack.copyWithCount(1) : storedSnapshot;
                 stack.shrink(1);
                 scrolls.set(target, stored);
                 write(clipboard, scrolls);

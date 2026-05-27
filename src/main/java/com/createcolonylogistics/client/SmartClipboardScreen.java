@@ -12,6 +12,7 @@ import net.minecraft.client.Minecraft;
 import net.minecraft.client.gui.GuiGraphics;
 import net.minecraft.client.gui.components.Renderable;
 import net.minecraft.client.gui.screens.Screen;
+import net.minecraft.core.registries.BuiltInRegistries;
 import net.minecraft.network.chat.Component;
 import net.minecraft.resources.ResourceLocation;
 import net.minecraft.world.item.Item;
@@ -27,6 +28,7 @@ import java.util.Set;
 
 public class SmartClipboardScreen extends Screen {
     private static final ResourceLocation STOCK_KEEPER_TEXTURE = ResourceLocation.fromNamespaceAndPath("create", "textures/gui/stock_keeper.png");
+    private static final ResourceLocation RESOURCE_SCROLL_ID = ResourceLocation.fromNamespaceAndPath("minecolonies", "resourcescroll");
     private static final int IMAGE_WIDTH = 256;
     private static final int IMAGE_HEIGHT = 316;
     private static final int HEADER_HEIGHT = 36;
@@ -238,7 +240,7 @@ public class SmartClipboardScreen extends Screen {
         }
 
         graphics.renderItem(selected, x, y);
-        graphics.drawString(font, truncate(selected.getHoverName(), LIST_WIDTH - 22), x + 22, y + 4, TEXT, false);
+        graphics.drawString(font, truncate(Component.literal(sanitizeScrollLine(selected.getHoverName().getString())), LIST_WIDTH - 22), x + 22, y + 4, TEXT, false);
         y += 24;
         y = renderSelectedResourceScrollContent(graphics, selected, x, y);
         return Math.max(0, y - (listTop - scroll));
@@ -251,24 +253,29 @@ public class SmartClipboardScreen extends Screen {
             return y + 14;
         }
 
-        graphics.drawString(font, truncate(Component.literal(content.buildingTitle()), LIST_WIDTH), x, y, TEXT, false);
+        graphics.drawString(font, truncate(Component.literal(sanitizeScrollLine(content.buildingTitle())), LIST_WIDTH), x, y, TEXT, false);
         y += LINE_HEIGHT;
         if (!content.projectTitle().isBlank()) {
-            graphics.drawString(font, truncate(Component.literal(content.projectTitle()), LIST_WIDTH), x, y, MUTED, false);
+            graphics.drawString(font, truncate(Component.literal(sanitizeScrollLine(content.projectTitle())), LIST_WIDTH), x, y, MUTED, false);
             y += LINE_HEIGHT;
         }
         graphics.drawString(font, truncate(Component.translatable("screen.create_colony_logistics.smart_clipboard.progress", content.suppliedPercent(), content.usedPercent()), LIST_WIDTH), x, y, MUTED, false);
         y += LINE_HEIGHT + 3;
 
         for (ResourceLine resource : content.resources()) {
+            int textWidth = Math.max(30, LIST_WIDTH - 22);
             graphics.renderItem(resource.stack(), x, y);
-            graphics.drawString(font, truncate(Component.literal(resource.name()), LIST_WIDTH - 22), x + 22, y + 1, TEXT, false);
+            graphics.drawString(font, truncate(Component.literal(sanitizeScrollLine(resource.name())), textWidth), x + 22, y + 1, TEXT, false);
             int statusColor = resource.missing() < 0 ? 0xFFFF5555 : MUTED;
-            graphics.drawString(font, truncate(Component.translatable("screen.create_colony_logistics.smart_clipboard.missing", resource.missing()), LIST_WIDTH - 22), x + 22, y + 11, statusColor, false);
-            graphics.drawString(font, truncate(Component.translatable("screen.create_colony_logistics.smart_clipboard.supplied", resource.available(), resource.required()), LIST_WIDTH - 22), x + 22, y + 21, statusColor, false);
+            graphics.drawString(font, truncate(Component.translatable("screen.create_colony_logistics.smart_clipboard.missing", resource.missing()), textWidth), x + 22, y + 11, statusColor, false);
+            graphics.drawString(font, truncate(Component.translatable("screen.create_colony_logistics.smart_clipboard.supplied", resource.available(), resource.required()), textWidth), x + 22, y + 21, statusColor, false);
             y += 34;
         }
         return y;
+    }
+
+    private String sanitizeScrollLine(String value) {
+        return value == null ? "" : value.replace('\n', ' ').replace('\r', ' ').strip();
     }
 
     private void renderEntry(GuiGraphics graphics, SmartClipboardReport.Entry entry, int index, int x, int y, int width, int height) {
@@ -442,12 +449,20 @@ public class SmartClipboardScreen extends Screen {
                     activeTab = Tab.SCROLLS;
                     selectedScroll = i;
                     rememberState();
-                    PacketDistributor.sendToServer(new ServerboundSmartClipboardScrollPacket(ServerboundSmartClipboardScrollPacket.INSERT, i));
+                    PacketDistributor.sendToServer(new ServerboundSmartClipboardScrollPacket(
+                            ServerboundSmartClipboardScrollPacket.INSERT,
+                            i,
+                            firstInventoryResourceScroll()
+                    ));
                 } else if (button == 1 || Screen.hasShiftDown()) {
                     activeTab = Tab.SCROLLS;
                     selectedScroll = nearestSelectedAfterRemoval(i);
                     rememberState();
-                    PacketDistributor.sendToServer(new ServerboundSmartClipboardScrollPacket(ServerboundSmartClipboardScrollPacket.REMOVE, i));
+                    PacketDistributor.sendToServer(new ServerboundSmartClipboardScrollPacket(
+                            ServerboundSmartClipboardScrollPacket.REMOVE,
+                            i,
+                            ItemStack.EMPTY
+                    ));
                 } else {
                     selectedScroll = i;
                     rememberState();
@@ -456,6 +471,20 @@ public class SmartClipboardScreen extends Screen {
             }
         }
         return false;
+    }
+
+    private ItemStack firstInventoryResourceScroll() {
+        Minecraft minecraft = Minecraft.getInstance();
+        if (minecraft.player == null) {
+            return ItemStack.EMPTY;
+        }
+        for (int i = 0; i < minecraft.player.getInventory().getContainerSize(); i++) {
+            ItemStack stack = minecraft.player.getInventory().getItem(i);
+            if (!stack.isEmpty() && RESOURCE_SCROLL_ID.equals(BuiltInRegistries.ITEM.getKey(stack.getItem()))) {
+                return stack.copyWithCount(1);
+            }
+        }
+        return ItemStack.EMPTY;
     }
 
     @Override

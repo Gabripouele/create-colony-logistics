@@ -17,7 +17,7 @@ import net.neoforged.neoforge.network.handling.IPayloadContext;
 
 import java.util.Optional;
 
-public record ServerboundSmartClipboardScrollPacket(int action, int slot) implements CustomPacketPayload {
+public record ServerboundSmartClipboardScrollPacket(int action, int slot, ItemStack scrollSnapshot) implements CustomPacketPayload {
     public static final int INSERT = 0;
     public static final int REMOVE = 1;
 
@@ -29,12 +29,13 @@ public record ServerboundSmartClipboardScrollPacket(int action, int slot) implem
             StreamCodec.ofMember(ServerboundSmartClipboardScrollPacket::encode, ServerboundSmartClipboardScrollPacket::decode);
 
     private static ServerboundSmartClipboardScrollPacket decode(RegistryFriendlyByteBuf buffer) {
-        return new ServerboundSmartClipboardScrollPacket(buffer.readVarInt(), buffer.readVarInt());
+        return new ServerboundSmartClipboardScrollPacket(buffer.readVarInt(), buffer.readVarInt(), ItemStack.OPTIONAL_STREAM_CODEC.decode(buffer));
     }
 
     private void encode(RegistryFriendlyByteBuf buffer) {
         buffer.writeVarInt(action);
         buffer.writeVarInt(slot);
+        ItemStack.OPTIONAL_STREAM_CODEC.encode(buffer, scrollSnapshot);
     }
 
     public static void handle(ServerboundSmartClipboardScrollPacket packet, IPayloadContext context) {
@@ -48,7 +49,7 @@ public record ServerboundSmartClipboardScrollPacket(int action, int slot) implem
             }
 
             boolean changed = packet.action() == INSERT
-                    ? SmartClipboardScrollStorage.insertFirstResourceScroll(player, clipboard.get())
+                    ? SmartClipboardScrollStorage.insertResourceScroll(player, clipboard.get(), packet.scrollSnapshot())
                     : SmartClipboardScrollStorage.removeResourceScroll(player, clipboard.get(), packet.slot());
             if (!changed) {
                 return;
