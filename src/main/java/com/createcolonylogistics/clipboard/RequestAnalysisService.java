@@ -95,7 +95,7 @@ public final class RequestAnalysisService {
         boolean graphDependencies = hasDependencyNodes(graphTree);
         List<RequestTreeNode> cutterTree = requestedStack
                 .filter(DomumOrnamentumRequestInspector::isDomumOrnamentumStack)
-                .map(stack -> cutterRequirementTree(player.serverLevel(), stack))
+                .map(stack -> cutterRequirementTree(player.serverLevel(), currentRequest, stack))
                 .orElse(List.of());
         String dependencySource = graphDependencies ? "MineColonies child graph" : (!cutterTree.isEmpty() ? "DO synthetic fallback" : "none");
 
@@ -125,6 +125,10 @@ public final class RequestAnalysisService {
                 dependencySource, graphTree.size(), dependencyCount(graphTree), childCount(currentRequest), cutterTree.size(), clientDependencyCount);
         CreateColonyLogistics.LOGGER.info("[SmartClipboardDebug] Domum: isDO={} cutterSyntheticAttempted={} syntheticDependencyNodes={}",
                 domumStack, domumStack, dependencyCount(cutterTree));
+        if (domumStack && requestedStack.isPresent()) {
+            CreateColonyLogistics.LOGGER.info("[SmartClipboardDebug] DomumCutter: {}",
+                    DomumOrnamentumRequestInspector.debugCutterSummary(player.serverLevel().getRecipeManager(), player.serverLevel().registryAccess(), requestedStack.get()));
+        }
         CreateColonyLogistics.LOGGER.info("[SmartClipboardDebug] Expandable: {} reason={}", expandable, expandableReason);
     }
 
@@ -518,7 +522,7 @@ public final class RequestAnalysisService {
         // request graph has no child dependency nodes to display.
         List<RequestTreeNode> tree = requestTree(colony.getRequestManager(), request, 0, 16);
         if (domumRequest && !hasDependencyNodes(tree)) {
-            List<RequestTreeNode> cutterTree = cutterRequirementTree(level, requestedStack);
+            List<RequestTreeNode> cutterTree = cutterRequirementTree(level, request, requestedStack);
             if (!cutterTree.isEmpty()) {
                 tree = cutterTree;
             }
@@ -549,9 +553,12 @@ public final class RequestAnalysisService {
         );
     }
 
-    private static List<RequestTreeNode> cutterRequirementTree(ServerLevel level, ItemStack requestedStack) {
+    private static List<RequestTreeNode> cutterRequirementTree(ServerLevel level, IRequest<?> request, ItemStack requestedStack) {
+        ItemStack materializedStack = DomumOrnamentumRequestInspector.materializedRequestedStack(request)
+                .map(stack -> stack.copyWithCount(Math.max(1, requestedStack.getCount())))
+                .orElse(requestedStack);
         List<DomumOrnamentumRequestInspector.IngredientRequirement> requirements =
-                DomumOrnamentumRequestInspector.findCutterRequirements(level.getRecipeManager(), level.registryAccess(), requestedStack);
+                DomumOrnamentumRequestInspector.findCutterRequirements(level.getRecipeManager(), level.registryAccess(), materializedStack);
         if (requirements.isEmpty()) {
             return List.of();
         }

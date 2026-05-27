@@ -7,16 +7,22 @@ import net.minecraft.world.item.ItemStack;
 import net.minecraft.world.item.crafting.Ingredient;
 import net.minecraft.world.item.crafting.RecipeHolder;
 import net.minecraft.world.item.crafting.RecipeManager;
+import com.minecolonies.api.colony.requestsystem.request.IRequest;
 
 import java.util.ArrayList;
+import java.util.LinkedHashSet;
 import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Map;
 import java.util.Optional;
+import java.util.Set;
+import java.util.regex.Matcher;
+import java.util.regex.Pattern;
 
 public final class DomumOrnamentumRequestInspector {
     private static final String DOMUM_ORNAMENTUM = "domum_ornamentum";
     private static final String ARCHITECTS_CUTTER = "architect";
+    private static final Pattern RESOURCE_LOCATION = Pattern.compile("\\b[a-z0-9_.-]+:[a-z0-9_./-]+\\b");
 
     private DomumOrnamentumRequestInspector() {
     }
@@ -33,6 +39,19 @@ public final class DomumOrnamentumRequestInspector {
         return itemId(stack) + "|" + stack.getComponentsPatch();
     }
 
+    public static Optional<ItemStack> materializedRequestedStack(IRequest<?> request) {
+        try {
+            Class<?> util = Class.forName("com.minecolonies.core.util.DomumOrnamentumUtils");
+            Object result = util.getMethod("getRequestedStack", IRequest.class).invoke(null, request);
+            if (result instanceof ItemStack stack && !stack.isEmpty() && isDomumOrnamentumStack(stack)) {
+                return Optional.of(stack.copy());
+            }
+        } catch (LinkageError | ReflectiveOperationException | RuntimeException ignored) {
+            // Optional MineColonies helper path; fall back to the already extracted request stack.
+        }
+        return Optional.empty();
+    }
+
     public static Optional<ResourceLocation> findCutterRecipe(RecipeManager recipeManager, HolderLookup.Provider provider, ItemStack requestedStack) {
         return findCutterRecipeHolder(recipeManager, provider, requestedStack).map(RecipeHolder::id);
     }
@@ -46,10 +65,12 @@ public final class DomumOrnamentumRequestInspector {
         ItemStack result = recipe.get().value().getResultItem(provider);
         int outputCount = Math.max(1, result.getCount());
         int crafts = Math.max(1, (requestedStack.getCount() + outputCount - 1) / outputCount);
+        List<ItemStack> materialStacks = materialStacksFromComponents(requestedStack);
         Map<ResourceLocation, ItemStack> stacks = new LinkedHashMap<>();
         Map<ResourceLocation, Integer> counts = new LinkedHashMap<>();
 
         try {
+            int materialIndex = 0;
             for (Ingredient ingredient : recipe.get().value().getIngredients()) {
                 if (ingredient == null || ingredient.isEmpty()) {
                     continue;
@@ -58,8 +79,11 @@ public final class DomumOrnamentumRequestInspector {
                 if (options.length == 0 || options[0].isEmpty()) {
                     continue;
                 }
-                ItemStack option = options[0].copy();
-                int required = Math.max(1, option.getCount()) * crafts;
+                ItemStack option = materialIndex < materialStacks.size()
+                        ? materialStacks.get(materialIndex).copy()
+                        : options[0].copy();
+                int required = Math.max(1, options[0].getCount()) * crafts;
+                materialIndex++;
                 ResourceLocation itemId = itemId(option);
                 stacks.putIfAbsent(itemId, option.copyWithCount(required));
                 counts.merge(itemId, required, Integer::sum);
@@ -74,6 +98,33 @@ public final class DomumOrnamentumRequestInspector {
             requirements.add(new IngredientRequirement(entry.getValue().copyWithCount(count), count));
         }
         return requirements;
+    }
+
+    public static String debugCutterSummary(RecipeManager recipeManager, HolderLookup.Provider provider, ItemStack requestedStack) {
+        Optional<RecipeHolder<?>> recipe = findCutterRecipeHolder(recipeManager, provider, requestedStack);
+        List<ItemStack> materials = materialStacksFromComponents(requestedStack);
+        String materialSummary = materials.stream()
+                .map(stack -> itemId(stack) + " x" + stack.getCount())
+                .toList()
+                .toString();
+        if (recipe.isEmpty()) {
+            return "recipe=none requested=" + itemId(requestedStack)
+                    + " requestedCount=" + requestedStack.getCount()
+                    + " materials=" + materialSummary
+                    + " components=" + compactComponentSummary(requestedStack);
+        }
+        ItemStack result = recipe.get().value().getResultItem(provider);
+        int outputCount = Math.max(1, result.getCount());
+        int crafts = Math.max(1, (requestedStack.getCount() + outputCount - 1) / outputCount);
+        int generated = findCutterRequirements(recipeManager, provider, requestedStack).size();
+        return "recipe=" + recipe.get().id()
+                + " output=" + itemId(result)
+                + " outputCount=" + outputCount
+                + " requestedCount=" + requestedStack.getCount()
+                + " crafts=" + crafts
+                + " materials=" + materialSummary
+                + " generated=" + generated
+                + " components=" + compactComponentSummary(requestedStack);
     }
 
     private static Optional<RecipeHolder<?>> findCutterRecipeHolder(RecipeManager recipeManager, HolderLookup.Provider provider, ItemStack requestedStack) {
@@ -102,6 +153,37 @@ public final class DomumOrnamentumRequestInspector {
             return Optional.empty();
         }
         return compatibleMatch;
+    }
+
+    private static List<ItemStack> materialStacksFromComponents(ItemStack requestedStack) {
+        Set<ResourceLocation> ids = new LinkedHashSet<>();
+        collectMaterialIds(requestedStack.getComponents().toString(), requestedStack, ids);
+        collectMaterialIds(requestedStack.getComponentsPatch().toString(), requestedStack, ids);
+
+        List<ItemStack> stacks = new ArrayList<>();
+        for (ResourceLocation id : ids) {
+            BuiltInRegistries.ITEM.getOptional(id).ifPresent(item -> stacks.add(new ItemStack(item)));
+        }
+        return stacks;
+    }
+
+    private static void collectMaterialIds(String data, ItemStack requestedStack, Set<ResourceLocation> ids) {
+        Matcher matcher = RESOURCE_LOCATION.matcher(data);
+        ResourceLocation requestedId = itemId(requestedStack);
+        while (matcher.find()) {
+            ResourceLocation id = ResourceLocation.tryParse(matcher.group());
+            if (id == null || DOMUM_ORNAMENTUM.equals(id.getNamespace()) || requestedId.equals(id)) {
+                continue;
+            }
+            if (BuiltInRegistries.ITEM.containsKey(id)) {
+                ids.add(id);
+            }
+        }
+    }
+
+    private static String compactComponentSummary(ItemStack stack) {
+        String summary = (stack.getComponents() + " " + stack.getComponentsPatch()).replaceAll("\\s+", " ");
+        return summary.length() <= 240 ? summary : summary.substring(0, 240) + "...";
     }
 
     public record IngredientRequirement(ItemStack stack, int count) {
