@@ -67,7 +67,7 @@ public class SmartClipboardScreen extends Screen {
         renderStockKeeperPanel(graphics);
 
         Component headerTitle = truncate(title, 196);
-        graphics.drawString(font, headerTitle, leftPos + (IMAGE_WIDTH - font.width(headerTitle)) / 2, topPos + 3, HEADER_TEXT, false);
+        graphics.drawString(font, headerTitle, leftPos + (IMAGE_WIDTH - font.width(headerTitle)) / 2, topPos + 4, HEADER_TEXT, false);
         graphics.drawString(font, truncate(Component.literal(report.colonyName()), LIST_WIDTH), leftPos + LIST_X, topPos + 27, TEXT, false);
         graphics.drawString(font, truncate(Component.translatable(
                 "screen.create_colony_logistics.smart_clipboard.summary",
@@ -144,11 +144,11 @@ public class SmartClipboardScreen extends Screen {
         if (expanded.contains(index)) {
             int detailY = y + EXPANDED_TOP_PADDING;
             detailY = value(graphics, x + 8, detailY, "screen.create_colony_logistics.smart_clipboard.requested", entry.requestedStack().getHoverName().getString() + " x" + entry.requestedCount());
+            detailY = value(graphics, x + 8, detailY, "screen.create_colony_logistics.smart_clipboard.requester", displayRequester(entry));
             detailY = value(graphics, x + 8, detailY, "screen.create_colony_logistics.smart_clipboard.worker", entry.requestingWorkerName().orElse(null));
-            detailY = value(graphics, x + 8, detailY, "screen.create_colony_logistics.smart_clipboard.dimension", entry.dimensionName().map(this::humanizeDimension).orElse(null));
             detailY = value(graphics, x + 8, detailY, "screen.create_colony_logistics.smart_clipboard.resolver", entry.resolverName().map(this::humanizeResolver).orElse(null));
             if (entry.requestTree().size() > 1) {
-                detailY = value(graphics, x + 8, detailY + 2, "screen.create_colony_logistics.smart_clipboard.needs", "");
+                detailY = label(graphics, x + 8, detailY + 2, "screen.create_colony_logistics.smart_clipboard.needs_label");
                 for (SmartClipboardReport.RequestTreeNode node : entry.requestTree()) {
                     detailY = treeValue(graphics, x + 8, detailY, node);
                 }
@@ -160,8 +160,16 @@ public class SmartClipboardScreen extends Screen {
         if (value == null || value.isBlank()) {
             return y;
         }
-        Component line = Component.translatable(key, value);
-        graphics.drawString(font, truncate(line, Math.max(40, leftPos + LIST_X + LIST_WIDTH - x - 4)), x, y, MUTED, false);
+        Component label = Component.translatable(key + "_label");
+        int maxWidth = Math.max(40, leftPos + LIST_X + LIST_WIDTH - x - 4);
+        graphics.drawString(font, truncate(label, maxWidth), x, y, HEADER_TEXT, false);
+        int valueX = x + font.width(label);
+        graphics.drawString(font, truncate(Component.literal(value), Math.max(20, leftPos + LIST_X + LIST_WIDTH - valueX - 4)), valueX, y, MUTED, false);
+        return y + LINE_HEIGHT;
+    }
+
+    private int label(GuiGraphics graphics, int x, int y, String key) {
+        graphics.drawString(font, Component.translatable(key), x, y, HEADER_TEXT, false);
         return y + LINE_HEIGHT;
     }
 
@@ -183,8 +191,8 @@ public class SmartClipboardScreen extends Screen {
         }
         int height = EXPANDED_TOP_PADDING;
         height += valueLineHeight(entry.requestedStack().getHoverName().getString());
+        height += valueLineHeight(displayRequester(entry));
         height += valueLineHeight(entry.requestingWorkerName().orElse(null));
-        height += valueLineHeight(entry.dimensionName().orElse(null));
         height += valueLineHeight(entry.resolverName().orElse(null));
         if (entry.requestTree().size() > 1) {
             height += LINE_HEIGHT + 2;
