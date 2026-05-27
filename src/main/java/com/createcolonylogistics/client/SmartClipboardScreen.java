@@ -538,7 +538,13 @@ public class SmartClipboardScreen extends Screen {
     }
 
     private String displayRequester(String requesterName) {
-        return requesterName == null || requesterName.isBlank() ? unknownHut() : shortenHutName(requesterName);
+        if (requesterName == null || requesterName.isBlank()) {
+            return unknownHut();
+        }
+        if (requesterName.contains(": ") && !requesterName.contains("com.minecolonies")) {
+            return requesterName.replaceAll("(?i)\\bHut\\b", "").replaceAll("\\s+", " ").trim();
+        }
+        return shortenHutName(requesterName);
     }
 
     private boolean isUnknownHut(String value) {

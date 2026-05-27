@@ -41,28 +41,81 @@ public final class RequestAnalysisService {
         int activeRequestCount = 0;
         boolean capped = false;
 
-        for (IBuilding requesterBuilding : colony.getBuildingManager().getBuildings().values().stream()
-                .sorted(Comparator.comparing(RequestAnalysisService::buildingDisplayName))
+        for (IRequest<?> request : clipboardRootRequests(colony).stream()
+                .sorted(Comparator.comparing(RequestAnalysisService::requesterSortName))
                 .toList()) {
-            for (IRequest<?> request : openRequestsForBuilding(colony, requesterBuilding)) {
-                activeRequestCount++;
-                Optional<ItemStack> requestedStack = requestedStack(request);
-                if (requestedStack.isEmpty()) {
-                    continue;
-                }
-
-                if (reported >= limit) {
-                    capped = true;
-                    continue;
-                }
-
-                RequestReportEntry entry = inspectRequest(level, colony, requesterBuilding, request, requestedStack.get(), !lessImportantRequests.contains(request.getId()));
-                grouped.computeIfAbsent(entry.requesterName(), ignored -> new ArrayList<>()).add(entry);
-                reported++;
+            activeRequestCount++;
+            Optional<ItemStack> requestedStack = requestedStack(request);
+            if (requestedStack.isEmpty()) {
+                continue;
             }
+
+            if (reported >= limit) {
+                capped = true;
+                continue;
+            }
+
+            IBuilding requesterBuilding = buildingForRequest(colony, request).orElse(null);
+            RequestReportEntry entry = inspectRequest(level, colony, requesterBuilding, request, requestedStack.get(), !lessImportantRequests.contains(request.getId()));
+            grouped.computeIfAbsent(entry.requesterName(), ignored -> new ArrayList<>()).add(entry);
+            reported++;
         }
 
         return new AnalysisResult(colony.getName(), colony.getID(), colony.getBuildingManager().getBuildings().size(), activeRequestCount, grouped, reported, capped);
+    }
+
+    private static Collection<IRequest<?>> clipboardRootRequests(IColony colony) {
+        Map<String, IRequest<?>> roots = new LinkedHashMap<>();
+        IRequestManager manager = colony.getRequestManager();
+        try {
+            addAssignedRootRequests(manager, manager.getPlayerResolver().getAllAssignedRequests(), roots);
+            addAssignedRootRequests(manager, manager.getRetryingRequestResolver().getAllAssignedRequests(), roots);
+        } catch (RuntimeException ignored) {
+            // Match MineColonies' clipboard source when available; fall back to building-open requests if resolver state is unavailable.
+            for (IBuilding building : colony.getBuildingManager().getBuildings().values()) {
+                for (IRequest<?> request : openRequestsForBuilding(colony, building)) {
+                    roots.putIfAbsent(request.getId().toString(), request);
+                }
+            }
+        }
+        return roots.values();
+    }
+
+    private static void addAssignedRootRequests(IRequestManager manager, Collection<IToken<?>> tokens, Map<String, IRequest<?>> roots) {
+        for (IToken<?> token : tokens) {
+            try {
+                IRequest<?> request = manager.getRequestForToken(token);
+                request = rootRequest(manager, request);
+                if (request != null && isActive(request.getState())) {
+                    roots.putIfAbsent(request.getId().toString(), request);
+                }
+            } catch (RuntimeException ignored) {
+                // Requests can disappear while MineColonies updates the resolver state.
+            }
+        }
+    }
+
+    private static IRequest<?> rootRequest(IRequestManager manager, IRequest<?> request) {
+        IRequest<?> current = request;
+        for (int depth = 0; current != null && depth < 16; depth++) {
+            try {
+                if (!current.hasParent()) {
+                    return current;
+                }
+                current = manager.getRequestForToken(current.getParent());
+            } catch (RuntimeException ignored) {
+                return current;
+            }
+        }
+        return current;
+    }
+
+    private static String requesterSortName(IRequest<?> request) {
+        try {
+            return request.getRequester().getLocation().toString();
+        } catch (RuntimeException ignored) {
+            return request.getId().toString();
+        }
     }
 
     private static Set<IToken<?>> lessImportantRequests(IColony colony) {
@@ -161,8 +214,8 @@ public final class RequestAnalysisService {
                 : Optional.empty();
 
         return new RequestReportEntry(
-                buildingDisplayName(building),
-                buildingPosition(building),
+                requesterDisplayName(colony.getRequestManager(), request, building),
+                building == null ? Optional.empty() : buildingPosition(building),
                 workerName(building, colony.getRequestManager(), request),
                 dimensionName(request),
                 resolverName(colony, request),
@@ -181,6 +234,27 @@ public final class RequestAnalysisService {
                 knowledge.canLearn(),
                 requestTree(colony.getRequestManager(), request, 0, 16)
         );
+    }
+
+    private static Optional<IBuilding> buildingForRequest(IColony colony, IRequest<?> request) {
+        try {
+            BlockPos location = request.getRequester().getLocation().getInDimensionLocation();
+            return Optional.ofNullable(colony.getBuildingManager().getBuilding(location));
+        } catch (RuntimeException ignored) {
+            return Optional.empty();
+        }
+    }
+
+    private static String requesterDisplayName(IRequestManager manager, IRequest<?> request, IBuilding fallbackBuilding) {
+        try {
+            String displayName = request.getRequester().getRequesterDisplayName(manager, request).getString();
+            if (!displayName.isBlank()) {
+                return displayName;
+            }
+        } catch (RuntimeException ignored) {
+            // Fall back to the building display name.
+        }
+        return fallbackBuilding == null ? request.getRequester().getClass().getSimpleName() : buildingDisplayName(fallbackBuilding);
     }
 
     private static List<ItemStack> displayStacks(IRequest<?> request, ItemStack fallback) {
@@ -229,6 +303,9 @@ public final class RequestAnalysisService {
     }
 
     private static String buildingDisplayName(IBuilding building) {
+        if (building == null) {
+            return "";
+        }
         if (building.getCustomName() != null && !building.getCustomName().isBlank()) {
             return building.getCustomName();
         }
@@ -244,6 +321,9 @@ public final class RequestAnalysisService {
     }
 
     private static Optional<String> workerName(IBuilding building, IRequestManager manager, IRequest<?> request) {
+        if (building == null) {
+            return Optional.empty();
+        }
         Optional<String> directWorker = workerName(building, request.getId());
         if (directWorker.isPresent()) {
             return directWorker;
