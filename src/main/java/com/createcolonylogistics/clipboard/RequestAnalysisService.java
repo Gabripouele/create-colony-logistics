@@ -107,11 +107,6 @@ public final class RequestAnalysisService {
     }
 
     private static Optional<ItemStack> requestedStack(IRequest<?> request) {
-        Optional<ItemStack> stackBasedTask = stackBasedTaskStack(request);
-        if (stackBasedTask.isPresent()) {
-            return stackBasedTask;
-        }
-
         Object requestable = request.getRequest();
         if (requestable instanceof IDeliverable deliverable) {
             ItemStack result = deliverable.getResult();
@@ -300,6 +295,11 @@ public final class RequestAnalysisService {
     }
 
     private static ItemStack requestDisplayStack(IRequest<?> request) {
+        Optional<ItemStack> stackBasedTask = stackBasedTaskStack(request);
+        if (stackBasedTask.isPresent()) {
+            return stackBasedTask.get();
+        }
+
         Optional<ItemStack> stack = requestedStack(request);
         if (stack.isPresent()) {
             return stack.get();

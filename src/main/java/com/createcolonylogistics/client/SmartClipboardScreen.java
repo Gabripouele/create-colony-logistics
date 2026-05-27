@@ -172,9 +172,7 @@ public class SmartClipboardScreen extends Screen {
 
         if (expanded.contains(index)) {
             int detailY = y + EXPANDED_TOP_PADDING;
-            detailY = value(graphics, x + 8, detailY, "screen.create_colony_logistics.smart_clipboard.requested", entry.requestedStack().getHoverName().getString() + " x" + entry.requestedCount());
             detailY = value(graphics, x + 8, detailY, "screen.create_colony_logistics.smart_clipboard.worker", entry.requestingWorkerName().orElse(null));
-            detailY = value(graphics, x + 8, detailY, "screen.create_colony_logistics.smart_clipboard.resolver", entry.resolverName().map(this::humanizeResolver).orElse(null));
             List<SmartClipboardReport.RequestTreeNode> dependencies = dependencyNodes(entry);
             if (!dependencies.isEmpty()) {
                 detailY += 2;
@@ -234,9 +232,7 @@ public class SmartClipboardScreen extends Screen {
             return COLLAPSED_HEIGHT;
         }
         int height = EXPANDED_TOP_PADDING;
-        height += valueLineHeight(entry.requestedStack().getHoverName().getString());
         height += valueLineHeight(entry.requestingWorkerName().orElse(null));
-        height += valueLineHeight(entry.resolverName().orElse(null));
         List<SmartClipboardReport.RequestTreeNode> dependencies = dependencyNodes(entry);
         if (!dependencies.isEmpty()) {
             height += 2 + visibleDependencyIndexes(entry, index).size() * TREE_ROW_HEIGHT;
@@ -430,9 +426,7 @@ public class SmartClipboardScreen extends Screen {
 
     private boolean toggleDependencyAt(SmartClipboardReport.Entry entry, int entryIndex, double mouseY, int rowY) {
         int y = rowY + EXPANDED_TOP_PADDING;
-        y += valueLineHeight(entry.requestedStack().getHoverName().getString());
         y += valueLineHeight(entry.requestingWorkerName().orElse(null));
-        y += valueLineHeight(entry.resolverName().orElse(null));
         y += 2;
         List<SmartClipboardReport.RequestTreeNode> dependencies = dependencyNodes(entry);
         for (int nodeIndex : visibleDependencyIndexes(entry, entryIndex)) {
