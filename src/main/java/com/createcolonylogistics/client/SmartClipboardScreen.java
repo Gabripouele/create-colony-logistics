@@ -7,6 +7,7 @@ import net.minecraft.client.gui.components.Button;
 import net.minecraft.client.gui.screens.Screen;
 import net.minecraft.core.BlockPos;
 import net.minecraft.network.chat.Component;
+import net.minecraft.resources.ResourceLocation;
 
 import java.util.HashSet;
 import java.util.List;
@@ -14,18 +15,31 @@ import java.util.Optional;
 import java.util.Set;
 
 public class SmartClipboardScreen extends Screen {
-    private static final int PANEL = 0xEE2B241C;
-    private static final int CARD = 0xEE3B3327;
-    private static final int CARD_HOVER = 0xEE514636;
-    private static final int BORDER = 0xFFB28A4A;
-    private static final int TEXT = 0xFFE8D8B8;
-    private static final int MUTED = 0xFFB7A98D;
+    private static final ResourceLocation CREATE_CLIPBOARD_TEXTURE = ResourceLocation.fromNamespaceAndPath("create", "textures/gui/clipboard.png");
+    // Measured from Create 6.0.6: ClipboardScreen#setWindowSize(256, 256), rendered with clipboard.png at guiTop - 8.
+    private static final int IMAGE_WIDTH = 256;
+    private static final int IMAGE_HEIGHT = 256;
+    private static final int TEXTURE_TOP_OFFSET = -8;
+    // Create clipboard entries occupy the parchment column around x + 44..214 and y + 50..229 on the texture.
+    private static final int LIST_X = 44;
+    private static final int LIST_WIDTH = 170;
+    private static final int LIST_TOP = 42;
+    private static final int LIST_BOTTOM = 218;
+    private static final int SCROLL_X = 218;
+    private static final int ROW_GAP = 3;
+    private static final int CARD = 0x20F7E3B0;
+    private static final int CARD_HOVER = 0x45FFFFFF;
+    private static final int BORDER = 0xFF8A5D2A;
+    private static final int TEXT = 0xFF311A00;
+    private static final int MUTED = 0xFF6E5330;
     private static final int GOOD = 0xFF7FCF84;
-    private static final int WARN = 0xFFE0A044;
+    private static final int WARN = 0xFFC06B22;
 
     private final SmartClipboardReport report;
     private final Set<Integer> expanded = new HashSet<>();
     private final Set<Integer> advanced = new HashSet<>();
+    private int leftPos;
+    private int topPos;
     private int scroll;
     private int contentHeight;
 
@@ -36,6 +50,8 @@ public class SmartClipboardScreen extends Screen {
 
     @Override
     protected void init() {
+        leftPos = (width - IMAGE_WIDTH) / 2;
+        topPos = (height - IMAGE_HEIGHT) / 2;
         addRenderableWidget(Button.builder(
                 Component.translatable("screen.create_colony_logistics.smart_clipboard.open_minecolonies"),
                 button -> {
@@ -43,27 +59,27 @@ public class SmartClipboardScreen extends Screen {
                         button.setMessage(Component.translatable("screen.create_colony_logistics.smart_clipboard.open_minecolonies_missing"));
                     }
                 }
-        ).bounds(this.width - 178, 12, 160, 20).build());
+        ).bounds(leftPos + 134, topPos + 226, 96, 20).build());
     }
 
     @Override
     public void render(GuiGraphics graphics, int mouseX, int mouseY, float partialTick) {
-        renderBackground(graphics, mouseX, mouseY, partialTick);
-        graphics.fill(16, 38, width - 16, height - 16, PANEL);
-        graphics.fill(16, 38, width - 16, 39, BORDER);
+        graphics.fill(0, 0, width, height, 0x99000000);
+        graphics.blit(CREATE_CLIPBOARD_TEXTURE, leftPos, topPos + TEXTURE_TOP_OFFSET, 0, 0, IMAGE_WIDTH, IMAGE_HEIGHT);
 
-        graphics.drawString(font, title, 20, 15, TEXT, false);
+        graphics.drawString(font, title, leftPos + LIST_X, topPos + 12, TEXT, false);
         graphics.drawString(font, Component.translatable(
                 "screen.create_colony_logistics.smart_clipboard.subtitle",
                 report.colonyName(),
                 report.colonyId(),
                 report.activeRequestCount(),
                 report.buildingCount()
-        ), 20, 28, MUTED, false);
+        ), leftPos + LIST_X, topPos + 25, MUTED, false);
 
-        int listTop = 46;
-        int listBottom = height - 24;
-        graphics.enableScissor(18, listTop, width - 18, listBottom);
+        int listTop = topPos + LIST_TOP;
+        int listBottom = topPos + LIST_BOTTOM;
+        scroll = Math.min(scroll, maxScroll(listTop, listBottom));
+        graphics.enableScissor(leftPos + LIST_X, listTop, leftPos + LIST_X + LIST_WIDTH, listBottom);
         contentHeight = renderEntries(graphics, mouseX, mouseY, listTop, listBottom);
         graphics.disableScissor();
 
@@ -73,17 +89,18 @@ public class SmartClipboardScreen extends Screen {
             int thumbHeight = Math.max(18, trackHeight * trackHeight / contentHeight);
             int maxScroll = maxScroll(listTop, listBottom);
             int thumbY = trackTop + (maxScroll == 0 ? 0 : scroll * (trackHeight - thumbHeight) / maxScroll);
-            graphics.fill(width - 12, trackTop, width - 8, listBottom, 0x66000000);
-            graphics.fill(width - 12, thumbY, width - 8, thumbY + thumbHeight, BORDER);
+            // Stock keeper screens use a very narrow Create-style handle; keep this textureless but equally compact.
+            graphics.fill(leftPos + SCROLL_X, trackTop, leftPos + SCROLL_X + 3, listBottom, 0x33735A38);
+            graphics.fill(leftPos + SCROLL_X - 1, thumbY, leftPos + SCROLL_X + 4, thumbY + thumbHeight, BORDER);
         }
 
         super.render(graphics, mouseX, mouseY, partialTick);
     }
 
     private int renderEntries(GuiGraphics graphics, int mouseX, int mouseY, int listTop, int listBottom) {
-        int x = 26;
+        int x = leftPos + LIST_X;
         int y = listTop - scroll;
-        int cardWidth = width - 60;
+        int cardWidth = LIST_WIDTH;
 
         if (report.entries().isEmpty()) {
             graphics.drawString(font, Component.translatable("screen.create_colony_logistics.smart_clipboard.empty"), x, y + 12, MUTED, false);
@@ -99,7 +116,7 @@ public class SmartClipboardScreen extends Screen {
             if (y + cardHeight >= listTop && y <= listBottom) {
                 renderEntry(graphics, entry, i, x, y, cardWidth, cardHeight, mouseX, mouseY);
             }
-            y += cardHeight + 6;
+            y += cardHeight + ROW_GAP;
         }
 
         if (report.capped()) {
@@ -113,51 +130,52 @@ public class SmartClipboardScreen extends Screen {
     private void renderEntry(GuiGraphics graphics, SmartClipboardReport.Entry entry, int index, int x, int y, int width, int height, int mouseX, int mouseY) {
         boolean hovered = mouseX >= x && mouseX <= x + width && mouseY >= y && mouseY <= y + height;
         graphics.fill(x, y, x + width, y + height, hovered ? CARD_HOVER : CARD);
-        graphics.fill(x, y, x + width, y + 1, BORDER);
+        graphics.fill(x, y + height - 1, x + width, y + height, 0x66735A38);
 
-        graphics.renderItem(entry.requestedStack(), x + 8, y + 8);
-        graphics.renderItemDecorations(font, entry.requestedStack(), x + 8, y + 8);
-
-        graphics.drawString(font, entry.requestedStack().getHoverName(), x + 32, y + 7, TEXT, false);
-        graphics.drawString(font, Component.translatable("screen.create_colony_logistics.smart_clipboard.request_line", entry.requestedCount(), entry.requestingBuildingName()), x + 32, y + 20, MUTED, false);
+        graphics.renderItem(entry.requestedStack(), x + 4, y + 6);
+        graphics.renderItemDecorations(font, entry.requestedStack(), x + 4, y + 6);
 
         Component status = entry.exactComboAlreadyTaught()
                 ? Component.translatable("screen.create_colony_logistics.smart_clipboard.status_known")
                 : Component.translatable("screen.create_colony_logistics.smart_clipboard.status_missing");
-        graphics.drawString(font, status, x + width - font.width(status) - 10, y + 14, entry.exactComboAlreadyTaught() ? GOOD : WARN, false);
+        int textX = x + 26;
+        int statusX = x + width - font.width(status) - 4;
+        graphics.drawString(font, font.plainSubstrByWidth(entry.requestedStack().getHoverName().getString(), Math.max(20, statusX - textX - 4)), textX, y + 5, TEXT, false);
+        graphics.drawString(font, Component.translatable("screen.create_colony_logistics.smart_clipboard.request_line", entry.requestedCount(), entry.requestingBuildingName()), textX, y + 17, MUTED, false);
+        graphics.drawString(font, status, statusX, y + 17, entry.exactComboAlreadyTaught() ? GOOD : WARN, false);
 
         if (expanded.contains(index)) {
-            int detailY = y + 42;
-            detailY = section(graphics, x + 12, detailY, Component.translatable("screen.create_colony_logistics.smart_clipboard.section.availability"));
-            detailY = value(graphics, x + 20, detailY, "screen.create_colony_logistics.smart_clipboard.stock", stock(entry.warehouseStock()));
-            detailY = value(graphics, x + 20, detailY, "screen.create_colony_logistics.smart_clipboard.known_by", listOrUnknown(entry.recipeKnownBy()));
-            detailY = value(graphics, x + 20, detailY, "screen.create_colony_logistics.smart_clipboard.can_learn", listOrUnknown(entry.canLearnCombo()));
+            int detailY = y + 34;
+            detailY = section(graphics, x + 8, detailY, Component.translatable("screen.create_colony_logistics.smart_clipboard.section.availability"));
+            detailY = value(graphics, x + 14, detailY, "screen.create_colony_logistics.smart_clipboard.stock", stock(entry.warehouseStock()));
+            detailY = value(graphics, x + 14, detailY, "screen.create_colony_logistics.smart_clipboard.known_by", listOrUnknown(entry.recipeKnownBy()));
+            detailY = value(graphics, x + 14, detailY, "screen.create_colony_logistics.smart_clipboard.can_learn", listOrUnknown(entry.canLearnCombo()));
 
-            detailY = section(graphics, x + 12, detailY + 2, Component.translatable("screen.create_colony_logistics.smart_clipboard.section.requester"));
-            detailY = value(graphics, x + 20, detailY, "screen.create_colony_logistics.smart_clipboard.worker", entry.requestingWorkerName().orElse(null));
-            detailY = value(graphics, x + 20, detailY, "screen.create_colony_logistics.smart_clipboard.position", entry.requestingBuildingPos().map(this::pos).orElse(null));
+            detailY = section(graphics, x + 8, detailY + 1, Component.translatable("screen.create_colony_logistics.smart_clipboard.section.requester"));
+            detailY = value(graphics, x + 14, detailY, "screen.create_colony_logistics.smart_clipboard.worker", entry.requestingWorkerName().orElse(null));
+            detailY = value(graphics, x + 14, detailY, "screen.create_colony_logistics.smart_clipboard.position", entry.requestingBuildingPos().map(this::pos).orElse(null));
 
-            detailY = section(graphics, x + 12, detailY + 2, Component.translatable("screen.create_colony_logistics.smart_clipboard.section.smart"));
-            detailY = value(graphics, x + 20, detailY, "screen.create_colony_logistics.smart_clipboard.taught", yesNo(entry.exactComboAlreadyTaught()));
-            detailY = value(graphics, x + 20, detailY, "screen.create_colony_logistics.smart_clipboard.do_block", entry.doBlockId());
-            detailY = value(graphics, x + 20, detailY, "screen.create_colony_logistics.smart_clipboard.cutter_recipe", entry.cutterRecipeId().orElse(null));
-            detailY = value(graphics, x + 20, detailY, "screen.create_colony_logistics.smart_clipboard.fingerprint", entry.comboFingerprintShort());
+            detailY = section(graphics, x + 8, detailY + 1, Component.translatable("screen.create_colony_logistics.smart_clipboard.section.smart"));
+            detailY = value(graphics, x + 14, detailY, "screen.create_colony_logistics.smart_clipboard.taught", yesNo(entry.exactComboAlreadyTaught()));
+            detailY = value(graphics, x + 14, detailY, "screen.create_colony_logistics.smart_clipboard.do_block", entry.doBlockId());
+            detailY = value(graphics, x + 14, detailY, "screen.create_colony_logistics.smart_clipboard.cutter_recipe", entry.cutterRecipeId().orElse(null));
+            detailY = value(graphics, x + 14, detailY, "screen.create_colony_logistics.smart_clipboard.fingerprint", entry.comboFingerprintShort());
 
             Component advancedLabel = Component.translatable(advanced.contains(index)
                     ? "screen.create_colony_logistics.smart_clipboard.advanced.hide"
                     : "screen.create_colony_logistics.smart_clipboard.advanced.show");
-            graphics.drawString(font, advancedLabel, x + 20, detailY + 4, BORDER, false);
+            graphics.drawString(font, advancedLabel, x + 14, detailY + 3, BORDER, false);
 
             if (advanced.contains(index)) {
-                value(graphics, x + 28, detailY + 18, "screen.create_colony_logistics.smart_clipboard.request_token", entry.requestToken().orElse(null));
-                value(graphics, x + 28, detailY + 31, "screen.create_colony_logistics.smart_clipboard.fingerprint_full", entry.comboFingerprintFull());
+                value(graphics, x + 20, detailY + 16, "screen.create_colony_logistics.smart_clipboard.request_token", entry.requestToken().orElse(null));
+                value(graphics, x + 20, detailY + 28, "screen.create_colony_logistics.smart_clipboard.fingerprint_full", entry.comboFingerprintFull());
             }
         }
     }
 
     private int section(GuiGraphics graphics, int x, int y, Component label) {
         graphics.drawString(font, label.copy().withStyle(ChatFormatting.BOLD), x, y, BORDER, false);
-        return y + 13;
+        return y + 11;
     }
 
     private int value(GuiGraphics graphics, int x, int y, String key, String value) {
@@ -165,23 +183,23 @@ public class SmartClipboardScreen extends Screen {
             value = Component.translatable("screen.create_colony_logistics.smart_clipboard.unknown").getString();
         }
         Component line = Component.translatable(key, value);
-        graphics.drawString(font, font.plainSubstrByWidth(line.getString(), Math.max(40, width - x - 40)), x, y, MUTED, false);
-        return y + 12;
+        graphics.drawString(font, font.plainSubstrByWidth(line.getString(), Math.max(40, leftPos + LIST_X + LIST_WIDTH - x - 4)), x, y, MUTED, false);
+        return y + 11;
     }
 
     private int entryHeight(int index) {
         if (!expanded.contains(index)) {
             return 38;
         }
-        return advanced.contains(index) ? 190 : 166;
+        return advanced.contains(index) ? 178 : 154;
     }
 
     @Override
     public boolean mouseClicked(double mouseX, double mouseY, int button) {
-        int listTop = 46;
+        int listTop = topPos + LIST_TOP;
         int y = listTop - scroll;
-        int x = 26;
-        int cardWidth = width - 60;
+        int x = leftPos + LIST_X;
+        int cardWidth = LIST_WIDTH;
 
         for (int i = 0; i < report.entries().size(); i++) {
             int cardHeight = entryHeight(i);
@@ -193,7 +211,7 @@ public class SmartClipboardScreen extends Screen {
                 }
                 return true;
             }
-            y += cardHeight + 6;
+            y += cardHeight + ROW_GAP;
         }
 
         return super.mouseClicked(mouseX, mouseY, button);
@@ -201,7 +219,7 @@ public class SmartClipboardScreen extends Screen {
 
     @Override
     public boolean mouseScrolled(double mouseX, double mouseY, double scrollX, double scrollY) {
-        int visible = height - 70;
+        int visible = LIST_BOTTOM - LIST_TOP;
         scroll = Math.max(0, Math.min(scroll - (int) (scrollY * 18), Math.max(0, contentHeight - visible)));
         return true;
     }
