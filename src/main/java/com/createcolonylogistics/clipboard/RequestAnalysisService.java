@@ -636,7 +636,7 @@ public final class RequestAnalysisService {
         boolean minimumStockRequest = isMinimumStockRequest(request);
         boolean domumRequest = DomumOrnamentumRequestInspector.isDomumOrnamentumStack(requestedStack);
         ColonyProductionInspector.ProductionKnowledge knowledge = domumRequest
-                ? ColonyProductionInspector.inspect(colony, requestedStack)
+                ? ColonyProductionInspector.inspect(colony, level, requestedStack)
                 : new ColonyProductionInspector.ProductionKnowledge(Collections.emptyList(), Collections.emptyList());
         Optional<ResourceLocation> cutterRecipe = domumRequest
                 ? DomumOrnamentumRequestInspector.findCutterRecipe(level.getRecipeManager(), level.registryAccess(), requestedStack)
