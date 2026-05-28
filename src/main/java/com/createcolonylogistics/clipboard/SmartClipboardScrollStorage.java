@@ -53,35 +53,66 @@ public final class SmartClipboardScrollStorage {
         return Optional.empty();
     }
 
-    public static boolean insertFirstResourceScroll(ServerPlayer player, ItemStack clipboard) {
-        return insertResourceScroll(player, clipboard, ScrollLinkSnapshot.EMPTY);
+    public static MutationResult insertFirstResourceScroll(ServerPlayer player, ItemStack clipboard) {
+        return insertResourceScroll(player, clipboard, 0, ScrollLinkSnapshot.EMPTY);
     }
 
-    public static boolean insertResourceScroll(ServerPlayer player, ItemStack clipboard, ScrollLinkSnapshot scrollSnapshot) {
-        List<ItemStack> scrolls = read(clipboard);
-        int target = firstEmptySlot(scrolls);
-        if (target < 0) {
-            return false;
+    public static MutationResult insertResourceScroll(ServerPlayer player, ItemStack clipboard, int slot, ScrollLinkSnapshot scrollSnapshot) {
+        if (slot < 0 || slot >= SLOT_COUNT) {
+            return MutationResult.rejected(slot, -1, "invalid slot");
         }
+        List<ItemStack> scrolls = read(clipboard);
+        if (!scrolls.get(slot).isEmpty()) {
+            return MutationResult.rejected(slot, -1, "requested slot occupied");
+        }
+
+        int matchedSlot = -1;
+        ItemStack matchedStack = ItemStack.EMPTY;
         for (int i = 0; i < player.getInventory().getContainerSize(); i++) {
             ItemStack stack = player.getInventory().getItem(i);
-            if (isResourceScroll(stack)) {
-                // Store only the MineColonies link components needed by the scroll UI. Copying arbitrary client
-                // ItemStack components into player data can introduce components with no network codec.
-                ItemStack stored = sanitizedScrollStack(stack, scrollSnapshot);
-                stack.shrink(1);
-                scrolls.set(target, stored);
-                write(clipboard, scrolls);
-                player.getInventory().setChanged();
-                return true;
+            if (matchesSnapshot(stack, scrollSnapshot)) {
+                if (matchedSlot >= 0) {
+                    return MutationResult.rejected(slot, -1, "ambiguous matching Resource Scroll");
+                }
+                matchedSlot = i;
+                matchedStack = stack;
             }
         }
-        return false;
+
+        if (matchedStack.isEmpty()) {
+            return MutationResult.rejected(slot, -1, "matching Resource Scroll not found");
+        }
+
+        // Store only the MineColonies link components needed by the scroll UI. Copying arbitrary client
+        // ItemStack components into player data can introduce components with no network codec.
+        ItemStack stored = sanitizedScrollStack(matchedStack, scrollSnapshot);
+        matchedStack.shrink(1);
+        scrolls.set(slot, stored);
+        write(clipboard, scrolls);
+        player.getInventory().setChanged();
+        return MutationResult.inserted(slot, matchedSlot, ScrollLinkSnapshot.from(stored));
+    }
+
+    private static boolean matchesSnapshot(ItemStack stack, ScrollLinkSnapshot snapshot) {
+        if (!isResourceScroll(stack)) {
+            return false;
+        }
+        ScrollLinkSnapshot safe = snapshot == null ? ScrollLinkSnapshot.EMPTY : snapshot;
+        ScrollLinkSnapshot actual = ScrollLinkSnapshot.from(stack);
+        if (safe.colonyId().hasColonyId() && !safe.colonyId().equals(actual.colonyId())) {
+            return false;
+        }
+        if (safe.buildingId().hasId() && !safe.buildingId().equals(actual.buildingId())) {
+            return false;
+        }
+        boolean hasWarehouse = !safe.warehouseSnapshot().hash().isEmpty() || !safe.warehouseSnapshot().snapshot().isEmpty();
+        return !hasWarehouse || safe.warehouseSnapshot().equals(actual.warehouseSnapshot());
     }
 
     private static ItemStack sanitizedScrollStack(ItemStack serverStack, ScrollLinkSnapshot snapshot) {
         ItemStack stored = new ItemStack(serverStack.getItem());
-        ScrollLinkSnapshot effective = snapshot.hasLink() ? snapshot : ScrollLinkSnapshot.from(serverStack);
+        ScrollLinkSnapshot safe = snapshot == null ? ScrollLinkSnapshot.EMPTY : snapshot;
+        ScrollLinkSnapshot effective = safe.hasLink() ? safe : ScrollLinkSnapshot.from(serverStack);
         if (effective.colonyId().hasColonyId()) {
             effective.colonyId().writeToItemStack(stored);
         }
@@ -94,36 +125,27 @@ public final class SmartClipboardScrollStorage {
         return stored;
     }
 
-    public static boolean removeResourceScroll(ServerPlayer player, ItemStack clipboard, int slot) {
+    public static MutationResult removeResourceScroll(ServerPlayer player, ItemStack clipboard, int slot) {
         if (slot < 0 || slot >= SLOT_COUNT) {
-            return false;
+            return MutationResult.rejected(slot, -1, "invalid slot");
         }
         List<ItemStack> scrolls = read(clipboard);
         ItemStack stored = scrolls.get(slot);
         if (!isResourceScroll(stored)) {
-            return false;
+            return MutationResult.rejected(slot, -1, "slot empty");
         }
         ItemStack returning = stored.copyWithCount(1);
         if (!player.getInventory().add(returning)) {
-            return false;
+            return MutationResult.rejected(slot, -1, "inventory full");
         }
         scrolls.set(slot, ItemStack.EMPTY);
         write(clipboard, scrolls);
         player.getInventory().setChanged();
-        return true;
+        return MutationResult.removed(slot);
     }
 
     public static boolean isResourceScroll(ItemStack stack) {
         return !stack.isEmpty() && RESOURCE_SCROLL_ID.equals(BuiltInRegistries.ITEM.getKey(stack.getItem()));
-    }
-
-    private static int firstEmptySlot(List<ItemStack> scrolls) {
-        for (int i = 0; i < Math.min(SLOT_COUNT, scrolls.size()); i++) {
-            if (scrolls.get(i).isEmpty()) {
-                return i;
-            }
-        }
-        return -1;
     }
 
     private static void write(ItemStack clipboard, List<ItemStack> scrolls) {
@@ -148,6 +170,21 @@ public final class SmartClipboardScrollStorage {
 
         public boolean hasLink() {
             return colonyId.hasColonyId() || buildingId.hasId() || !warehouseSnapshot.hash().isEmpty() || !warehouseSnapshot.snapshot().isEmpty();
+        }
+    }
+
+    public record MutationResult(boolean changed, int requestedSlot, int actualSlot, int matchedInventorySlot, boolean ambiguousMatch,
+                                 String rejectedReason, ScrollLinkSnapshot matchedSnapshot) {
+        public static MutationResult inserted(int slot, int matchedInventorySlot, ScrollLinkSnapshot matchedSnapshot) {
+            return new MutationResult(true, slot, slot, matchedInventorySlot, false, "", matchedSnapshot);
+        }
+
+        public static MutationResult removed(int slot) {
+            return new MutationResult(true, slot, slot, -1, false, "", ScrollLinkSnapshot.EMPTY);
+        }
+
+        public static MutationResult rejected(int requestedSlot, int matchedInventorySlot, String reason) {
+            return new MutationResult(false, requestedSlot, -1, matchedInventorySlot, reason != null && reason.contains("ambiguous"), reason, ScrollLinkSnapshot.EMPTY);
         }
     }
 }

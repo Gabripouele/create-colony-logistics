@@ -5,6 +5,7 @@ import com.createcolonylogistics.clipboard.ColonyContextResolver;
 import com.createcolonylogistics.clipboard.RequestAnalysisService;
 import com.createcolonylogistics.clipboard.SmartClipboardReport;
 import com.createcolonylogistics.clipboard.SmartClipboardScrollStorage;
+import com.createcolonylogistics.clipboard.SmartClipboardScrollStorage.MutationResult;
 import com.createcolonylogistics.clipboard.SmartClipboardScrollStorage.ScrollLinkSnapshot;
 import com.minecolonies.api.colony.IColony;
 import com.minecolonies.api.items.component.BuildingId;
@@ -52,22 +53,45 @@ public record ServerboundSmartClipboardScrollPacket(int action, int slot, Scroll
                 return;
             }
 
-            boolean changed = packet.action() == INSERT
-                    ? SmartClipboardScrollStorage.insertResourceScroll(player, clipboard.get(), packet.scrollSnapshot())
+            MutationResult result = packet.action() == INSERT
+                    ? SmartClipboardScrollStorage.insertResourceScroll(player, clipboard.get(), packet.slot(), packet.scrollSnapshot())
                     : SmartClipboardScrollStorage.removeResourceScroll(player, clipboard.get(), packet.slot());
-            if (!changed) {
+            logMutation(packet, result);
+            if (!result.changed()) {
+                player.sendSystemMessage(net.minecraft.network.chat.Component.literal(result.rejectedReason()));
                 return;
             }
 
+            SmartClipboardReport report;
             Optional<IColony> colony = ColonyContextResolver.resolve(player, Optional.empty());
-            if (colony.isEmpty()) {
-                return;
+            if (colony.isPresent()) {
+                RequestAnalysisService.AnalysisResult analysis = RequestAnalysisService.analyze(player.serverLevel(), colony.get(), 250);
+                report = SmartClipboardReport.fromAnalysis(analysis, SmartClipboardScrollStorage.read(clipboard.get()));
+            } else {
+                report = new SmartClipboardReport("", 0, 0, 0, false, SmartClipboardScrollStorage.read(clipboard.get()), java.util.List.of());
             }
-            RequestAnalysisService.AnalysisResult result = RequestAnalysisService.analyze(player.serverLevel(), colony.get(), 250);
-            PacketDistributor.sendToPlayer(player, new ClientboundSmartClipboardReportPacket(
-                    SmartClipboardReport.fromAnalysis(result, SmartClipboardScrollStorage.read(clipboard.get()))
-            ));
+            PacketDistributor.sendToPlayer(player, new ClientboundSmartClipboardReportPacket(report));
         });
+    }
+
+    private static void logMutation(ServerboundSmartClipboardScrollPacket packet, MutationResult result) {
+        if (packet.action() == INSERT) {
+            ScrollLinkSnapshot matched = result.matchedSnapshot();
+            CreateColonyLogistics.LOGGER.info("[SmartScrollDebug] Insert: requestedSlot={} actualInsertedSlot={} matchedInventorySlot={} matchedColonyId={} matchedBuildingId={} ambiguousMatch={} insertRejectedReason='{}'",
+                    result.requestedSlot(),
+                    result.actualSlot(),
+                    result.matchedInventorySlot(),
+                    matched.colonyId().hasColonyId() ? matched.colonyId().id() : "none",
+                    matched.buildingId().hasId() ? matched.buildingId().id() : "none",
+                    result.ambiguousMatch(),
+                    result.rejectedReason());
+        } else {
+            CreateColonyLogistics.LOGGER.info("[SmartScrollDebug] Remove: removedSlot={} inventoryAddSuccess={} storageCleared={} rejectedReason='{}'",
+                    result.requestedSlot(),
+                    result.changed(),
+                    result.changed(),
+                    result.rejectedReason());
+        }
     }
 
     @Override
