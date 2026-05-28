@@ -3,6 +3,7 @@ package com.createcolonylogistics.client;
 import com.createcolonylogistics.CreateColonyLogistics;
 import com.createcolonylogistics.clipboard.DomumOrnamentumRequestInspector;
 import com.createcolonylogistics.clipboard.SmartClipboardReport;
+import com.createcolonylogistics.clipboard.SmartClipboardScrollStorage;
 import com.createcolonylogistics.clipboard.SmartClipboardScrollStorage.ScrollLinkSnapshot;
 import com.createcolonylogistics.network.ServerboundSmartClipboardDebugPacket;
 import com.createcolonylogistics.network.ServerboundSmartClipboardScrollPacket;
@@ -73,9 +74,11 @@ public class SmartClipboardScreen extends Screen {
     private static final int SMART_INFO_HEADER_COLOR = 0xA0A0A0;
     private static final int SMART_INFO_LABEL_COLOR = 0xFFF2D78C;
     private static final int SMART_INFO_VALUE_COLOR = 0xFF8FA7FF;
+    private static final int RESOURCE_SCROLL_SOFT_RED = 0xFFD88A7A;
     private static final int TAB_WIDTH = 58;
     private static final int TAB_HEIGHT = 16;
     private static final int SCROLL_SLOT_SIZE = 20;
+    private static final int SCROLL_SLOT_COLUMNS = 9;
 
     private final SmartClipboardReport report;
     private final Set<Integer> expanded = new HashSet<>();
@@ -227,9 +230,9 @@ public class SmartClipboardScreen extends Screen {
         graphics.drawString(font, Component.translatable("screen.create_colony_logistics.smart_clipboard.scroll_storage"), x, y, HEADER_TEXT, false);
         y += 13;
 
-        for (int i = 0; i < 9; i++) {
-            int slotX = x + (i % 9) * SCROLL_SLOT_SIZE;
-            int slotY = y;
+        for (int i = 0; i < SmartClipboardScrollStorage.SLOT_COUNT; i++) {
+            int slotX = scrollSlotX(x, i);
+            int slotY = scrollSlotY(y, i);
             graphics.fill(slotX, slotY, slotX + 18, slotY + 18, 0x805E5A52);
             graphics.fill(slotX, slotY, slotX + 18, slotY + 1, SEPARATOR);
             graphics.fill(slotX, slotY + 17, slotX + 18, slotY + 18, SEPARATOR);
@@ -248,7 +251,7 @@ public class SmartClipboardScreen extends Screen {
                 graphics.drawString(font, "+", slotX + 6, slotY + 5, DIM, false);
             }
         }
-        y += 28;
+        y += scrollSlotGridHeight();
         graphics.fill(x, y - 6, x + LIST_WIDTH, y - 5, SEPARATOR);
 
         ItemStack selected = selectedScroll >= 0 && selectedScroll < scrolls.size() ? scrolls.get(selectedScroll) : ItemStack.EMPTY;
@@ -288,7 +291,7 @@ public class SmartClipboardScreen extends Screen {
             int textWidth = Math.max(30, LIST_WIDTH - 22);
             graphics.renderItem(resource.stack(), x, y);
             graphics.drawString(font, truncate(Component.literal(sanitizeScrollLine(resource.name())), textWidth), x + 22, y + 1, TEXT, false);
-            graphics.drawString(font, truncate(Component.translatable("screen.create_colony_logistics.smart_clipboard.missing", resource.missing()), textWidth), x + 22, y + 11, resource.neededColor(), false);
+            drawNeededLine(graphics, resource, x + 22, y + 11, textWidth);
             graphics.drawString(font, truncate(Component.translatable("screen.create_colony_logistics.smart_clipboard.supplied", resource.available(), resource.required()), textWidth), x + 22, y + 21, resource.suppliedColor(), false);
             if (resource.deliveryOrWarehouseAmount() > 0) {
                 graphics.drawString(font, truncate(Component.literal(String.valueOf(resource.deliveryOrWarehouseAmount())), 24), x + LIST_WIDTH - 24, y + 11, MUTED, false);
@@ -296,6 +299,13 @@ public class SmartClipboardScreen extends Screen {
             y += 34;
         }
         return y;
+    }
+
+    private void drawNeededLine(GuiGraphics graphics, ResourceLine resource, int x, int y, int width) {
+        Component label = Component.literal("Needed: ");
+        graphics.drawString(font, truncate(label, width), x, y, MUTED, false);
+        int valueX = x + font.width(label);
+        graphics.drawString(font, truncate(Component.literal(String.valueOf(resource.missing())), Math.max(0, width - font.width(label))), valueX, y, resource.neededValueColor(), false);
     }
 
     private ResourceScrollContent buildClientResourceScrollRows(ItemStack selectedClientScroll) {
@@ -482,10 +492,10 @@ public class SmartClipboardScreen extends Screen {
 
     private boolean handleScrollClick(double mouseX, double mouseY, int button) {
         int x = leftPos + LIST_X;
-        int y = topPos + LIST_TOP - scroll + 13;
-        for (int i = 0; i < 9; i++) {
-            int slotX = x + (i % 9) * SCROLL_SLOT_SIZE;
-            int slotY = y;
+        int y = topPos + LIST_TOP + 5 - scroll + 13;
+        for (int i = 0; i < SmartClipboardScrollStorage.SLOT_COUNT; i++) {
+            int slotX = scrollSlotX(x, i);
+            int slotY = scrollSlotY(y, i);
             if (mouseX >= slotX && mouseX < slotX + 18 && mouseY >= slotY && mouseY < slotY + 18) {
                 ItemStack stack = i < report.resourceScrolls().size() ? report.resourceScrolls().get(i) : ItemStack.EMPTY;
                 if (stack.isEmpty()) {
@@ -641,9 +651,9 @@ public class SmartClipboardScreen extends Screen {
         logHeldScrollComparison(scrollStack);
         for (int i = 0; i < Math.min(5, content.resources().size()); i++) {
             ResourceLine line = content.resources().get(i);
-            CreateColonyLogistics.LOGGER.info("[SmartScrollDebug] Row[{}]: name='{}' item={} needed={} available={} required={} deliveryOrWarehouse={} neededColor={} suppliedColor={}",
+            CreateColonyLogistics.LOGGER.info("[SmartScrollDebug] Row[{}]: name='{}' item={} needed={} available={} required={} deliveryOrWarehouse={} neededValueColor={} suppliedColor={}",
                     i, line.name(), BuiltInRegistries.ITEM.getKey(line.stack().getItem()), line.missing(), line.available(),
-                    line.required(), line.deliveryOrWarehouseAmount(), line.neededColor(), line.suppliedColor());
+                    line.required(), line.deliveryOrWarehouseAmount(), line.neededValueColor(), line.suppliedColor());
         }
         return content;
     }
@@ -784,9 +794,9 @@ public class SmartClipboardScreen extends Screen {
     private boolean renderHoveredScrollTooltip(GuiGraphics graphics, int mouseX, int mouseY, int listTop) {
         int x = leftPos + LIST_X;
         int y = listTop - scroll + 13;
-        for (int i = 0; i < 9; i++) {
-            int slotX = x + (i % 9) * SCROLL_SLOT_SIZE;
-            int slotY = y;
+        for (int i = 0; i < SmartClipboardScrollStorage.SLOT_COUNT; i++) {
+            int slotX = scrollSlotX(x, i);
+            int slotY = scrollSlotY(y, i);
             if (mouseX >= slotX && mouseX < slotX + 18 && mouseY >= slotY && mouseY < slotY + 18) {
                 ItemStack stack = i < report.resourceScrolls().size() ? report.resourceScrolls().get(i) : ItemStack.EMPTY;
                 if (!stack.isEmpty()) {
@@ -812,7 +822,7 @@ public class SmartClipboardScreen extends Screen {
         }
 
         int x = leftPos + LIST_X;
-        int y = listTop - scroll + 13 + 28;
+        int y = listTop - scroll + 13 + scrollSlotGridHeight();
         y += 24;
         y += LINE_HEIGHT;
         if (!content.projectTitle().isBlank()) {
@@ -1123,6 +1133,19 @@ public class SmartClipboardScreen extends Screen {
         return count;
     }
 
+    private int scrollSlotX(int x, int slot) {
+        return x + (slot % SCROLL_SLOT_COLUMNS) * SCROLL_SLOT_SIZE;
+    }
+
+    private int scrollSlotY(int y, int slot) {
+        return y + (slot / SCROLL_SLOT_COLUMNS) * SCROLL_SLOT_SIZE;
+    }
+
+    private int scrollSlotGridHeight() {
+        int rows = (SmartClipboardScrollStorage.SLOT_COUNT + SCROLL_SLOT_COLUMNS - 1) / SCROLL_SLOT_COLUMNS;
+        return rows * SCROLL_SLOT_SIZE + 8;
+    }
+
     private static int clampSelectedScroll(SmartClipboardReport report, int preferred) {
         if (preferred >= 0 && preferred < report.resourceScrolls().size() && !report.resourceScrolls().get(preferred).isEmpty()) {
             return preferred;
@@ -1132,7 +1155,7 @@ public class SmartClipboardScreen extends Screen {
                 return i;
             }
         }
-        return Math.max(0, Math.min(preferred, 8));
+        return Math.max(0, Math.min(preferred, SmartClipboardScrollStorage.SLOT_COUNT - 1));
     }
 
     private int nearestSelectedAfterRemoval(int removedSlot) {
@@ -1463,7 +1486,7 @@ public class SmartClipboardScreen extends Screen {
     private record ResolvedScrollBuilding(IBuildingView building, String source) {
     }
 
-    private record ResourceLine(ItemStack stack, String name, int missing, int available, int required, int deliveryOrWarehouseAmount, int neededColor, int suppliedColor) {
+    private record ResourceLine(ItemStack stack, String name, int missing, int available, int required, int deliveryOrWarehouseAmount, int neededValueColor, int suppliedColor) {
         static ResourceLine from(BuildingBuilderResource resource, Map<String, Integer> warehouseSnapshot) {
             ItemStack stack = resource.getItemStack().copyWithCount(1);
             int available = Math.max(0, resource.getAvailable());
@@ -1472,7 +1495,7 @@ public class SmartClipboardScreen extends Screen {
             int extra = resource.getAmountInDelivery() > 0
                     ? resource.getAmountInDelivery()
                     : warehouseSnapshot.getOrDefault(warehouseSnapshotKey(resource), 0);
-            return new ResourceLine(stack, resource.getName(), missing, available, required, extra, neededColor(missing), suppliedColor(available, required));
+            return new ResourceLine(stack, resource.getName(), missing, available, required, extra, neededValueColor(missing), suppliedColor(available, required));
         }
 
         private static String warehouseSnapshotKey(BuildingBuilderResource resource) {
@@ -1480,12 +1503,12 @@ public class SmartClipboardScreen extends Screen {
             return stack.getDescriptionId() + "-" + stack.getComponentsPatch().hashCode();
         }
 
-        private static int neededColor(int missing) {
-            return missing > 0 ? 0xFFE07D6F : MUTED;
+        private static int neededValueColor(int missing) {
+            return missing > 0 ? RESOURCE_SCROLL_SOFT_RED : MUTED;
         }
 
         private static int suppliedColor(int available, int required) {
-            return required > 0 && available >= required ? 0xFF78B86B : MUTED;
+            return available >= required ? 0xFF78B86B : RESOURCE_SCROLL_SOFT_RED;
         }
     }
 

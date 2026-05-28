@@ -17,7 +17,7 @@ import java.util.List;
 import java.util.Optional;
 
 public final class SmartClipboardScrollStorage {
-    public static final int SLOT_COUNT = 9;
+    public static final int SLOT_COUNT = 18;
 
     private static final ResourceLocation RESOURCE_SCROLL_ID = ResourceLocation.fromNamespaceAndPath("minecolonies", "resourcescroll");
 
@@ -54,7 +54,13 @@ public final class SmartClipboardScrollStorage {
     }
 
     public static MutationResult insertFirstResourceScroll(ServerPlayer player, ItemStack clipboard) {
-        return insertResourceScroll(player, clipboard, 0, ScrollLinkSnapshot.EMPTY);
+        List<ItemStack> scrolls = read(clipboard);
+        for (int i = 0; i < scrolls.size(); i++) {
+            if (scrolls.get(i).isEmpty()) {
+                return insertResourceScroll(player, clipboard, i, ScrollLinkSnapshot.EMPTY);
+            }
+        }
+        return MutationResult.rejected(-1, -1, "storage full");
     }
 
     public static MutationResult insertResourceScroll(ServerPlayer player, ItemStack clipboard, int slot, ScrollLinkSnapshot scrollSnapshot) {
