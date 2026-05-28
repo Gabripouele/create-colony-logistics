@@ -69,6 +69,8 @@ public class SmartClipboardScreen extends Screen {
     private static final int SUMMARY_LINE_Y = COLONY_LINE_Y + 12;
     private static final int CONTENT_LIST_TOP = SUMMARY_LINE_Y + 19;
     private static final int CONTENT_LIST_BOTTOM = 294;
+    private static final int SCROLL_STORAGE_GRID_TOP = 246;
+    private static final int SCROLL_DETAILS_BOTTOM_GAP = 8;
     private static final int LIST_X = 39;
     private static final int LIST_WIDTH = 180;
     private static final int SCROLL_X = 219;
@@ -133,19 +135,20 @@ public class SmartClipboardScreen extends Screen {
         graphics.drawString(font, truncate(Component.literal(report.colonyName()), activeTab == Tab.REQUESTS ? LIST_WIDTH - IMPORTANT_BUTTON_SIZE - 5 : LIST_WIDTH), leftPos + LIST_X, topPos + COLONY_LINE_Y, SECONDARY_TEXT, false);
         if (activeTab == Tab.REQUESTS) {
             renderImportantButton(graphics, mouseX, mouseY);
+            graphics.drawString(font, truncate(Component.translatable("screen.create_colony_logistics.smart_clipboard.summary", report.activeRequestCount(), report.buildingCount()), LIST_WIDTH), leftPos + LIST_X, topPos + SUMMARY_LINE_Y, SECONDARY_TEXT, false);
         }
-        graphics.drawString(font, truncate(activeTab == Tab.REQUESTS
-                ? Component.translatable("screen.create_colony_logistics.smart_clipboard.summary", report.activeRequestCount(), report.buildingCount())
-                : Component.translatable("screen.create_colony_logistics.smart_clipboard.scrolls_summary", nonEmptyScrollCount()), LIST_WIDTH), leftPos + LIST_X, topPos + SUMMARY_LINE_Y, SECONDARY_TEXT, false);
 
         int listTop = listTop();
         int listBottom = listBottom();
         graphics.fill(leftPos + LIST_X, listTop - 3, leftPos + LIST_X + LIST_WIDTH, listTop - 2, DIVIDER_LINE);
         scroll = Math.min(scroll, maxScroll(listTop, listBottom));
+        if (activeTab == Tab.SCROLLS) {
+            renderScrollStorageGrid(graphics);
+        }
         graphics.enableScissor(leftPos + LIST_X, listTop, leftPos + LIST_X + LIST_WIDTH, listBottom);
         contentHeight = activeTab == Tab.REQUESTS
                 ? renderEntries(graphics, mouseX, mouseY, listTop, listBottom)
-                : renderScrolls(graphics, listTop, listBottom);
+                : renderScrollDetails(graphics, listTop);
         graphics.disableScissor();
 
         if (contentHeight > listBottom - listTop) {
@@ -163,7 +166,7 @@ public class SmartClipboardScreen extends Screen {
         if (renderHoveredTabTooltip(graphics, mouseX, mouseY)) {
             return;
         }
-        if (activeTab == Tab.SCROLLS && (renderHoveredScrollTooltip(graphics, mouseX, mouseY, listTop)
+        if (activeTab == Tab.SCROLLS && (renderHoveredScrollTooltip(graphics, mouseX, mouseY)
                 || renderHoveredScrollResourceTooltip(graphics, mouseX, mouseY, listTop))) {
             return;
         }
@@ -278,12 +281,10 @@ public class SmartClipboardScreen extends Screen {
         return Math.max(0, y - (listTop - scroll));
     }
 
-    private int renderScrolls(GuiGraphics graphics, int listTop, int listBottom) {
+    private void renderScrollStorageGrid(GuiGraphics graphics) {
         int x = leftPos + LIST_X;
-        int y = listTop - scroll;
+        int y = scrollStorageGridTop();
         List<ItemStack> scrolls = report.resourceScrolls();
-        graphics.drawString(font, Component.translatable("screen.create_colony_logistics.smart_clipboard.scroll_storage"), x, y, TITLE_TEXT, false);
-        y += 13;
 
         for (int i = 0; i < SmartClipboardScrollStorage.SLOT_COUNT; i++) {
             int slotX = scrollSlotX(x, i);
@@ -306,18 +307,18 @@ public class SmartClipboardScreen extends Screen {
                 graphics.drawString(font, "+", slotX + 6, slotY + 5, MUTED_TEXT, false);
             }
         }
-        y += scrollSlotGridHeight();
-        graphics.fill(x, y - 6, x + LIST_WIDTH, y - 5, DIVIDER_LINE);
+    }
 
+    private int renderScrollDetails(GuiGraphics graphics, int listTop) {
+        int x = leftPos + LIST_X;
+        int y = listTop - scroll;
+        List<ItemStack> scrolls = report.resourceScrolls();
         ItemStack selected = selectedScroll >= 0 && selectedScroll < scrolls.size() ? scrolls.get(selectedScroll) : ItemStack.EMPTY;
         if (selected.isEmpty()) {
             graphics.drawString(font, truncate(Component.literal("No Resource Scroll selected."), LIST_WIDTH), x, y, MUTED_TEXT, false);
             return y + 14 - (listTop - scroll);
         }
 
-        graphics.renderItem(selected, x, y);
-        graphics.drawString(font, truncate(Component.literal(sanitizeScrollLine(selected.getHoverName().getString())), LIST_WIDTH - 22), x + 22, y + 4, PRIMARY_TEXT, false);
-        y += 24;
         y = renderSelectedScrollFromClientStack(graphics, selected, x, y);
         return Math.max(0, y - (listTop - scroll));
     }
@@ -567,7 +568,7 @@ public class SmartClipboardScreen extends Screen {
 
     private boolean handleScrollClick(double mouseX, double mouseY, int button) {
         int x = leftPos + LIST_X;
-        int y = listTop(Tab.SCROLLS) - scroll + 13;
+        int y = scrollStorageGridTop();
         for (int i = 0; i < SmartClipboardScrollStorage.SLOT_COUNT; i++) {
             int slotX = scrollSlotX(x, i);
             int slotY = scrollSlotY(y, i);
@@ -807,6 +808,10 @@ public class SmartClipboardScreen extends Screen {
 
     @Override
     public boolean mouseScrolled(double mouseX, double mouseY, double scrollX, double scrollY) {
+        if (activeTab == Tab.SCROLLS && (mouseX < leftPos + LIST_X || mouseX >= leftPos + LIST_X + LIST_WIDTH
+                || mouseY < listTop() || mouseY >= listBottom())) {
+            return false;
+        }
         int visible = listBottom() - listTop();
         scroll = Math.max(0, Math.min(scroll - (int) (scrollY * 18), Math.max(0, contentHeight - visible)));
         return true;
@@ -869,9 +874,9 @@ public class SmartClipboardScreen extends Screen {
         ));
     }
 
-    private boolean renderHoveredScrollTooltip(GuiGraphics graphics, int mouseX, int mouseY, int listTop) {
+    private boolean renderHoveredScrollTooltip(GuiGraphics graphics, int mouseX, int mouseY) {
         int x = leftPos + LIST_X;
-        int y = listTop - scroll + 13;
+        int y = scrollStorageGridTop();
         for (int i = 0; i < SmartClipboardScrollStorage.SLOT_COUNT; i++) {
             int slotX = scrollSlotX(x, i);
             int slotY = scrollSlotY(y, i);
@@ -889,6 +894,10 @@ public class SmartClipboardScreen extends Screen {
     }
 
     private boolean renderHoveredScrollResourceTooltip(GuiGraphics graphics, int mouseX, int mouseY, int listTop) {
+        if (mouseX < leftPos + LIST_X || mouseX >= leftPos + LIST_X + LIST_WIDTH
+                || mouseY < listTop || mouseY >= listBottom(Tab.SCROLLS)) {
+            return false;
+        }
         List<ItemStack> scrolls = report.resourceScrolls();
         ItemStack selected = selectedScroll >= 0 && selectedScroll < scrolls.size() ? scrolls.get(selectedScroll) : ItemStack.EMPTY;
         if (selected.isEmpty()) {
@@ -900,8 +909,7 @@ public class SmartClipboardScreen extends Screen {
         }
 
         int x = leftPos + LIST_X;
-        int y = listTop - scroll + 13 + scrollSlotGridHeight();
-        y += 24;
+        int y = listTop - scroll;
         y += LINE_HEIGHT;
         if (!content.projectTitle().isBlank()) {
             y += LINE_HEIGHT;
@@ -1201,16 +1209,6 @@ public class SmartClipboardScreen extends Screen {
         return indexes;
     }
 
-    private int nonEmptyScrollCount() {
-        int count = 0;
-        for (ItemStack stack : report.resourceScrolls()) {
-            if (!stack.isEmpty()) {
-                count++;
-            }
-        }
-        return count;
-    }
-
     private int listTop() {
         return listTop(activeTab);
     }
@@ -1224,7 +1222,13 @@ public class SmartClipboardScreen extends Screen {
     }
 
     private int listBottom(Tab tab) {
-        return topPos + CONTENT_LIST_BOTTOM;
+        return tab == Tab.SCROLLS
+                ? scrollStorageGridTop() - SCROLL_DETAILS_BOTTOM_GAP
+                : topPos + CONTENT_LIST_BOTTOM;
+    }
+
+    private int scrollStorageGridTop() {
+        return topPos + SCROLL_STORAGE_GRID_TOP;
     }
 
     private int scrollSlotX(int x, int slot) {
@@ -1233,11 +1237,6 @@ public class SmartClipboardScreen extends Screen {
 
     private int scrollSlotY(int y, int slot) {
         return y + (slot / SCROLL_SLOT_COLUMNS) * SCROLL_SLOT_SIZE;
-    }
-
-    private int scrollSlotGridHeight() {
-        int rows = (SmartClipboardScrollStorage.SLOT_COUNT + SCROLL_SLOT_COLUMNS - 1) / SCROLL_SLOT_COLUMNS;
-        return rows * SCROLL_SLOT_SIZE + 8;
     }
 
     private static int clampSelectedScroll(SmartClipboardReport report, int preferred) {
