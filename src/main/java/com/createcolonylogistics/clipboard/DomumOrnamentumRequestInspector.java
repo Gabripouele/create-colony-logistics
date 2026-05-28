@@ -2,6 +2,9 @@ package com.createcolonylogistics.clipboard;
 
 import com.minecolonies.api.crafting.GenericRecipe;
 import com.minecolonies.api.crafting.IGenericRecipe;
+import com.minecolonies.api.crafting.ItemStorage;
+import com.minecolonies.api.crafting.ModRecipeTypes;
+import com.minecolonies.api.crafting.RecipeStorage;
 import net.minecraft.core.HolderLookup;
 import net.minecraft.core.registries.BuiltInRegistries;
 import net.minecraft.resources.ResourceLocation;
@@ -147,13 +150,23 @@ public final class DomumOrnamentumRequestInspector {
             List<List<ItemStack>> inputs = materialStacks.stream()
                     .map(stack -> List.of(stack.copyWithCount(1)))
                     .toList();
+            List<ItemStorage> storageInputs = materialStacks.stream()
+                    .map(stack -> new ItemStorage(stack.copyWithCount(1)))
+                    .toList();
             IGenericRecipe genericRecipe = GenericRecipe.builder()
                     .withRecipeId(primary.recipe().id())
                     .withOutputs(primary.output().copy(), alternateOutputs)
                     .withInputs(inputs)
                     .withGridSize(3)
                     .build();
-            return Optional.of(new CutterRecipeMatch(primary.recipe().id(), genericRecipe, primary.output().copy(), List.copyOf(materialStacks)));
+            RecipeStorage storage = RecipeStorage.builder()
+                    .withInputs(storageInputs)
+                    .withPrimaryOutput(primary.output().copy())
+                    .withAlternateOutputs(alternateOutputs)
+                    .withGridSize(3)
+                    .withRecipeType(ModRecipeTypes.MULTI_OUTPUT_ID)
+                    .build();
+            return Optional.of(new CutterRecipeMatch(primary.recipe().id(), genericRecipe, storage, primary.output().copy(), List.copyOf(materialStacks)));
         } catch (RuntimeException ignored) {
             return Optional.empty();
         } catch (LinkageError | ReflectiveOperationException ignored) {
@@ -461,7 +474,7 @@ public final class DomumOrnamentumRequestInspector {
     public record IngredientRequirement(ItemStack stack, int count) {
     }
 
-    public record CutterRecipeMatch(ResourceLocation recipeId, IGenericRecipe genericRecipe, ItemStack assembledOutput, List<ItemStack> materialStacks) {
+    public record CutterRecipeMatch(ResourceLocation recipeId, IGenericRecipe genericRecipe, RecipeStorage recipeStorage, ItemStack assembledOutput, List<ItemStack> materialStacks) {
     }
 
     private record AssembledCutterRecipe(RecipeHolder<?> recipe, ItemStack output) {

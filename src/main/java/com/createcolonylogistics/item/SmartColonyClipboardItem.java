@@ -4,8 +4,11 @@ import com.createcolonylogistics.clipboard.ColonyContextResolver;
 import com.createcolonylogistics.clipboard.RequestAnalysisService;
 import com.createcolonylogistics.clipboard.SmartClipboardReport;
 import com.createcolonylogistics.clipboard.SmartClipboardScrollStorage;
+import com.createcolonylogistics.clipboard.SmartClipboardRecipeTeachingService;
 import com.createcolonylogistics.network.ClientboundSmartClipboardReportPacket;
+import com.minecolonies.api.IMinecoloniesAPI;
 import com.minecolonies.api.colony.IColony;
+import com.minecolonies.api.colony.buildings.IBuilding;
 import net.minecraft.network.chat.Component;
 import net.minecraft.server.level.ServerPlayer;
 import net.minecraft.world.InteractionHand;
@@ -32,6 +35,18 @@ public class SmartColonyClipboardItem extends Item {
     public InteractionResult useOn(UseOnContext context) {
         if (context.getPlayer() instanceof ServerPlayer serverPlayer) {
             preserveMineColoniesClipboardContext(context);
+            if (serverPlayer.isShiftKeyDown()) {
+                IBuilding building = IMinecoloniesAPI.getInstance().getColonyManager().getBuilding(context.getLevel(), context.getClickedPos());
+                if (building != null && building.getColony() != null) {
+                    SmartClipboardRecipeTeachingService.teachRequestedArchitectsCutterRecipes(
+                            serverPlayer,
+                            serverPlayer.serverLevel(),
+                            building.getColony(),
+                            building
+                    );
+                    return InteractionResult.SUCCESS;
+                }
+            }
             runReport(serverPlayer, Optional.of(context.getClickedPos()));
             return InteractionResult.SUCCESS;
         }
