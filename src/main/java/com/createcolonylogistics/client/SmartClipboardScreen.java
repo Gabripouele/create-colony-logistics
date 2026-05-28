@@ -6,8 +6,6 @@ import com.createcolonylogistics.clipboard.SmartClipboardScrollStorage.ScrollLin
 import com.createcolonylogistics.network.ServerboundSmartClipboardDebugPacket;
 import com.createcolonylogistics.network.ServerboundSmartClipboardScrollPacket;
 import com.createcolonylogistics.network.ServerboundSmartScrollDebugPacket;
-import com.minecolonies.api.colony.IColonyManager;
-import com.minecolonies.api.colony.IColonyView;
 import com.minecolonies.api.colony.buildings.views.IBuildingView;
 import com.minecolonies.api.colony.requestsystem.request.IRequest;
 import com.minecolonies.api.colony.requestsystem.requestable.deliveryman.Delivery;
@@ -579,6 +577,7 @@ public class SmartClipboardScreen extends Screen {
         CreateColonyLogistics.LOGGER.info("[SmartScrollDebug] RenderPath: method=renderSelectedResourceScrollContent oldTooltipSummary=false newAdapterList={} invalidMessage={} bounds={}x{}+{},{}",
                 content.error().isBlank() && !content.resources().isEmpty(), !content.error().isBlank(), LIST_WIDTH,
                 LIST_BOTTOM - LIST_TOP, leftPos + LIST_X, topPos + LIST_TOP);
+        logHeldScrollComparison(scrollStack);
         for (int i = 0; i < Math.min(5, content.resources().size()); i++) {
             ResourceLine line = content.resources().get(i);
             CreateColonyLogistics.LOGGER.info("[SmartScrollDebug] Row[{}]: name='{}' item={} missing={} available={} required={} deliveryOrWarehouse={} color={}",
@@ -586,6 +585,53 @@ public class SmartClipboardScreen extends Screen {
                     line.required(), line.deliveryOrWarehouseAmount(), line.statusColor());
         }
         return content;
+    }
+
+    private void logHeldScrollComparison(ItemStack selectedStack) {
+        ItemStack carriedScroll = firstInventoryResourceScrollStack();
+        if (carriedScroll.isEmpty()) {
+            CreateColonyLogistics.LOGGER.info("[SmartScrollDebug] StackCompare: no resource scroll found in player inventory for comparison");
+            return;
+        }
+        logScrollStackSnapshot("selected-client", selectedStack);
+        logScrollStackSnapshot("inventory-scroll", carriedScroll);
+
+        ColonyId selectedColony = ColonyId.readFromItemStack(selectedStack);
+        ColonyId inventoryColony = ColonyId.readFromItemStack(carriedScroll);
+        BuildingId selectedBuilding = BuildingId.readFromItemStack(selectedStack);
+        BuildingId inventoryBuilding = BuildingId.readFromItemStack(carriedScroll);
+        WarehouseSnapshot selectedWarehouse = WarehouseSnapshot.readFromItemStack(selectedStack);
+        WarehouseSnapshot inventoryWarehouse = WarehouseSnapshot.readFromItemStack(carriedScroll);
+        CreateColonyLogistics.LOGGER.info("[SmartScrollDebug] StackCompare: sameItem={} sameColony={} sameDimension={} sameBuilding={} sameWarehouseHash={} selectedPatch={} inventoryPatch={}",
+                selectedStack.getItem() == carriedScroll.getItem(),
+                selectedColony.id() == inventoryColony.id(),
+                selectedColony.dimension().equals(inventoryColony.dimension()),
+                selectedBuilding.id().equals(inventoryBuilding.id()),
+                selectedWarehouse.hash().equals(inventoryWarehouse.hash()),
+                selectedStack.getComponentsPatch(),
+                carriedScroll.getComponentsPatch());
+    }
+
+    private void logScrollStackSnapshot(String label, ItemStack stack) {
+        ColonyId colonyId = ColonyId.readFromItemStack(stack);
+        BuildingId buildingId = BuildingId.readFromItemStack(stack);
+        WarehouseSnapshot warehouseSnapshot = WarehouseSnapshot.readFromItemStack(stack);
+        IBuildingView buildingView = stack.isEmpty() ? null : BuildingId.readBuildingViewFromItemStack(stack);
+        CreateColonyLogistics.LOGGER.info("[SmartScrollDebug] Stack[{}]: item={} count={} hasComponents={} hasColonyId={} colonyId={} dimension={} hasBuildingId={} buildingPos={} hasWarehouseSnapshot={} warehouseEntries={} exactMineColoniesViewResolved={} viewClass={} isBuilderView={}",
+                label,
+                stack.isEmpty() ? "empty" : BuiltInRegistries.ITEM.getKey(stack.getItem()),
+                stack.getCount(),
+                !stack.getComponentsPatch().isEmpty(),
+                colonyId.hasColonyId(),
+                colonyId.id(),
+                colonyId.dimension().location(),
+                buildingId.hasId(),
+                buildingId.id(),
+                !warehouseSnapshot.hash().isEmpty() || !warehouseSnapshot.snapshot().isEmpty(),
+                warehouseSnapshot.snapshot().size(),
+                buildingView != null,
+                buildingView == null ? "none" : buildingView.getClass().getName(),
+                buildingView instanceof BuildingBuilder.View);
     }
 
     private void showScrollDebugMessage(String message) {
@@ -596,17 +642,21 @@ public class SmartClipboardScreen extends Screen {
     }
 
     private ScrollLinkSnapshot firstInventoryResourceScroll() {
+        return ScrollLinkSnapshot.from(firstInventoryResourceScrollStack());
+    }
+
+    private ItemStack firstInventoryResourceScrollStack() {
         Minecraft minecraft = Minecraft.getInstance();
         if (minecraft.player == null) {
-            return ScrollLinkSnapshot.EMPTY;
+            return ItemStack.EMPTY;
         }
         for (int i = 0; i < minecraft.player.getInventory().getContainerSize(); i++) {
             ItemStack stack = minecraft.player.getInventory().getItem(i);
             if (!stack.isEmpty() && RESOURCE_SCROLL_ID.equals(BuiltInRegistries.ITEM.getKey(stack.getItem()))) {
-                return ScrollLinkSnapshot.from(stack);
+                return stack;
             }
         }
-        return ScrollLinkSnapshot.EMPTY;
+        return ItemStack.EMPTY;
     }
 
     @Override
@@ -1232,63 +1282,9 @@ public class SmartClipboardScreen extends Screen {
         private static ResolvedScrollBuilding resolveBuilderView(ItemStack scroll) {
             IBuildingView building = BuildingId.readBuildingViewFromItemStack(scroll);
             if (building != null) {
-                return new ResolvedScrollBuilding(building, "BuildingId.readBuildingViewFromItemStack");
+                return new ResolvedScrollBuilding(building, "client-selected-stack -> BuildingId.readBuildingViewFromItemStack");
             }
-            ColonyId colonyId = ColonyId.readFromItemStack(scroll);
-            BuildingId buildingId = BuildingId.readFromItemStack(scroll);
-            if (!buildingId.hasId()) {
-                return new ResolvedScrollBuilding(null, "unresolved:no-building-id");
-            }
-
-            IColonyManager colonyManager = IColonyManager.getInstance();
-            if (colonyId.hasColonyId()) {
-                IColonyView linkedColony = colonyManager.getColonyView(colonyId.id(), colonyId.dimension());
-                building = buildingFromColony(linkedColony, buildingId);
-                if (building != null) {
-                    return new ResolvedScrollBuilding(building, "IColonyManager.getColonyView(component).getBuilding");
-                }
-
-                building = colonyManager.getBuildingView(colonyId.dimension(), buildingId.id());
-                if (building != null) {
-                    return new ResolvedScrollBuilding(building, "IColonyManager.getBuildingView(component-dimension)");
-                }
-            }
-
-            Minecraft minecraft = Minecraft.getInstance();
-            if (minecraft.level != null) {
-                building = colonyManager.getBuildingView(minecraft.level.dimension(), buildingId.id());
-                if (building != null) {
-                    return new ResolvedScrollBuilding(building, "IColonyManager.getBuildingView(client-dimension)");
-                }
-
-                IColonyView colonyAtBuilding = colonyManager.getColonyView(minecraft.level, buildingId.id());
-                building = buildingFromColony(colonyAtBuilding, buildingId);
-                if (building != null) {
-                    return new ResolvedScrollBuilding(building, "IColonyManager.getColonyView(client-level, building-pos).getBuilding");
-                }
-
-                IColonyView closestToBuilding = colonyManager.getClosestColonyView(minecraft.level, buildingId.id());
-                building = buildingFromColony(closestToBuilding, buildingId);
-                if (building != null) {
-                    return new ResolvedScrollBuilding(building, "IColonyManager.getClosestColonyView(building-pos).getBuilding");
-                }
-
-                if (minecraft.player != null) {
-                    IColonyView closestToPlayer = colonyManager.getClosestColonyView(minecraft.level, minecraft.player.blockPosition());
-                    building = buildingFromColony(closestToPlayer, buildingId);
-                    if (building != null) {
-                        return new ResolvedScrollBuilding(building, "IColonyManager.getClosestColonyView(player-pos).getBuilding");
-                    }
-                }
-            }
-            return new ResolvedScrollBuilding(null, "unresolved");
-        }
-
-        private static IBuildingView buildingFromColony(IColonyView colony, BuildingId buildingId) {
-            if (colony == null || !buildingId.hasId()) {
-                return null;
-            }
-            return colony.getBuilding(buildingId.id());
+            return new ResolvedScrollBuilding(null, "client-selected-stack -> BuildingId.readBuildingViewFromItemStack unresolved");
         }
 
         private static void applyPlayerAndDeliveryAmounts(BuildingBuilderResource resource, BuildingBuilder.View builder, List<Delivery> deliveries) {
