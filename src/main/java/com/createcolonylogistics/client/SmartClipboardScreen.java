@@ -75,6 +75,10 @@ public class SmartClipboardScreen extends Screen {
     private static final int LIST_X = 39;
     private static final int LIST_WIDTH = 180;
     private static final int SCROLL_X = 219;
+    private static final int SCROLLBAR_WIDTH = 5;
+    private static final int SCROLLBAR_TRACK_TOP_INSET = 2;
+    private static final int SCROLLBAR_TRACK_BOTTOM_INSET = 2;
+    private static final int SCROLLBAR_THUMB_HEIGHT = 9;
     private static final int IMPORTANT_BUTTON_SIZE = 11;
     private static final int TREE_INDENT = 8;
     private static final int TREE_ROW_HEIGHT = 18;
@@ -107,6 +111,8 @@ public class SmartClipboardScreen extends Screen {
     private boolean importantOnly;
     private Tab activeTab = Tab.REQUESTS;
     private int selectedScroll;
+    private boolean draggingScrollbar;
+    private int scrollbarDragOffset;
     private static Tab rememberedTab = Tab.REQUESTS;
     private static int rememberedSelectedScroll;
 
@@ -142,7 +148,7 @@ public class SmartClipboardScreen extends Screen {
         int listTop = listTop();
         int listBottom = listBottom();
         graphics.fill(leftPos + LIST_X, listTop - 3, leftPos + LIST_X + LIST_WIDTH, listTop - 2, DIVIDER_LINE);
-        scroll = Math.min(scroll, maxScroll(listTop, listBottom));
+        scroll = clampScroll(scroll, listTop, listBottom);
         if (activeTab == Tab.SCROLLS) {
             renderScrollStorageGrid(graphics);
         }
@@ -152,13 +158,10 @@ public class SmartClipboardScreen extends Screen {
                 : renderScrollDetails(graphics, listTop);
         graphics.disableScissor();
 
-        if (contentHeight > listBottom - listTop) {
-            int trackTop = listTop + 2;
-            int trackHeight = listBottom - listTop;
-            int thumbHeight = Math.max(18, trackHeight * trackHeight / contentHeight);
-            int maxScroll = maxScroll(listTop, listBottom);
-            int thumbY = trackTop + (maxScroll == 0 ? 0 : scroll * (trackHeight - thumbHeight) / maxScroll);
-            renderStockKeeperScrollbar(graphics, thumbY, thumbHeight, listTop, listBottom);
+        scroll = clampScroll(scroll, listTop, listBottom);
+        ScrollbarMetrics scrollbar = scrollbarMetrics(listTop, listBottom);
+        if (scrollbar != null) {
+            renderStockKeeperScrollbar(graphics, scrollbar);
         }
 
         for (Renderable renderable : renderables) {
@@ -500,7 +503,13 @@ public class SmartClipboardScreen extends Screen {
                 dumpSelectedScrollDebug();
                 return true;
             }
+            if (handleScrollbarClick(mouseX, mouseY, button)) {
+                return true;
+            }
             return handleScrollClick(mouseX, mouseY, button);
+        }
+        if (handleScrollbarClick(mouseX, mouseY, button)) {
+            return true;
         }
         if (Screen.hasShiftDown() && scrollDebugHit(mouseX, mouseY)) {
             CreateColonyLogistics.LOGGER.info("[SmartScrollDebug] ignored: not Scrolls tab activeTab={}", activeTab);
@@ -565,6 +574,25 @@ public class SmartClipboardScreen extends Screen {
 
     private boolean tabHit(double mouseX, double mouseY, int x, int y) {
         return mouseX >= x && mouseX < x + TAB_WIDTH && mouseY >= y && mouseY < y + TAB_HEIGHT;
+    }
+
+    private boolean handleScrollbarClick(double mouseX, double mouseY, int button) {
+        if (button != 0) {
+            return false;
+        }
+        ScrollbarMetrics metrics = scrollbarMetrics(listTop(), listBottom());
+        if (metrics == null || !metrics.trackHit(mouseX, mouseY)) {
+            return false;
+        }
+        if (metrics.thumbHit(mouseX, mouseY)) {
+            draggingScrollbar = true;
+            scrollbarDragOffset = (int) Math.round(mouseY) - metrics.thumbY();
+        } else {
+            draggingScrollbar = true;
+            scrollbarDragOffset = SCROLLBAR_THUMB_HEIGHT / 2;
+            setScrollFromThumbY((int) Math.round(mouseY) - scrollbarDragOffset, metrics);
+        }
+        return true;
     }
 
     private boolean handleScrollClick(double mouseX, double mouseY, int button) {
@@ -813,9 +841,29 @@ public class SmartClipboardScreen extends Screen {
                 || mouseY < listTop() || mouseY >= listBottom())) {
             return false;
         }
-        int visible = listBottom() - listTop();
-        scroll = Math.max(0, Math.min(scroll - (int) (scrollY * 18), Math.max(0, contentHeight - visible)));
+        scroll = clampScroll(scroll - (int) (scrollY * 18), listTop(), listBottom());
         return true;
+    }
+
+    @Override
+    public boolean mouseDragged(double mouseX, double mouseY, int button, double dragX, double dragY) {
+        if (draggingScrollbar && button == 0) {
+            ScrollbarMetrics metrics = scrollbarMetrics(listTop(), listBottom());
+            if (metrics != null) {
+                setScrollFromThumbY((int) Math.round(mouseY) - scrollbarDragOffset, metrics);
+            }
+            return true;
+        }
+        return super.mouseDragged(mouseX, mouseY, button, dragX, dragY);
+    }
+
+    @Override
+    public boolean mouseReleased(double mouseX, double mouseY, int button) {
+        if (draggingScrollbar && button == 0) {
+            draggingScrollbar = false;
+            return true;
+        }
+        return super.mouseReleased(mouseX, mouseY, button);
     }
 
     private void renderStockKeeperPanel(GuiGraphics graphics) {
@@ -831,14 +879,14 @@ public class SmartClipboardScreen extends Screen {
         graphics.blit(STOCK_KEEPER_TEXTURE, leftPos, bottomCapY, BOTTOM_CAP_U, BOTTOM_CAP_V, PANEL_WIDTH, BOTTOM_CAP_HEIGHT);
     }
 
-    private void renderStockKeeperScrollbar(GuiGraphics graphics, int thumbY, int thumbHeight, int listTop, int listBottom) {
-        int x = leftPos + SCROLL_X;
-        graphics.blit(STOCK_KEEPER_TEXTURE, x, listTop, 219, 192, 5, 4);
-        for (int y = listTop + 4; y < listBottom - 5; y++) {
-            graphics.blit(STOCK_KEEPER_TEXTURE, x, y, 219, 196, 5, 1);
+    private void renderStockKeeperScrollbar(GuiGraphics graphics, ScrollbarMetrics metrics) {
+        int x = metrics.x();
+        graphics.blit(STOCK_KEEPER_TEXTURE, x, metrics.trackTop(), 219, 192, SCROLLBAR_WIDTH, 4);
+        for (int y = metrics.trackTop() + 4; y < metrics.trackBottom() - 5; y++) {
+            graphics.blit(STOCK_KEEPER_TEXTURE, x, y, 219, 196, SCROLLBAR_WIDTH, 1);
         }
-        graphics.blit(STOCK_KEEPER_TEXTURE, x, listBottom - 5, 219, 207, 5, 5);
-        graphics.blit(STOCK_KEEPER_TEXTURE, x, thumbY, 219, 197, 5, Math.min(9, thumbHeight));
+        graphics.blit(STOCK_KEEPER_TEXTURE, x, metrics.trackBottom() - 5, 219, 207, SCROLLBAR_WIDTH, 5);
+        graphics.blit(STOCK_KEEPER_TEXTURE, x, metrics.thumbY(), 219, 197, SCROLLBAR_WIDTH, SCROLLBAR_THUMB_HEIGHT);
     }
 
     private boolean renderHoveredItemTooltip(GuiGraphics graphics, int mouseX, int mouseY, int listTop) {
@@ -1078,6 +1126,47 @@ public class SmartClipboardScreen extends Screen {
 
     private int maxScroll(int top, int bottom) {
         return Math.max(0, contentHeight - (bottom - top));
+    }
+
+    private int clampScroll(int value, int top, int bottom) {
+        return Math.max(0, Math.min(value, maxScroll(top, bottom)));
+    }
+
+    private ScrollbarMetrics scrollbarMetrics(int listTop, int listBottom) {
+        int maxScroll = maxScroll(listTop, listBottom);
+        if (maxScroll <= 0) {
+            return null;
+        }
+        int trackTop = listTop + SCROLLBAR_TRACK_TOP_INSET;
+        int trackBottom = listBottom - SCROLLBAR_TRACK_BOTTOM_INSET;
+        int trackHeight = trackBottom - trackTop;
+        if (trackHeight <= SCROLLBAR_THUMB_HEIGHT) {
+            return null;
+        }
+        int thumbTravel = trackHeight - SCROLLBAR_THUMB_HEIGHT;
+        int thumbY = trackTop + scroll * thumbTravel / maxScroll;
+        return new ScrollbarMetrics(leftPos + SCROLL_X, trackTop, trackBottom, thumbY, thumbTravel, maxScroll);
+    }
+
+    private void setScrollFromThumbY(int thumbY, ScrollbarMetrics metrics) {
+        int clampedY = Math.max(metrics.trackTop(), Math.min(thumbY, metrics.maxThumbY()));
+        scroll = metrics.thumbTravel() <= 0
+                ? 0
+                : (clampedY - metrics.trackTop()) * metrics.maxScroll() / metrics.thumbTravel();
+    }
+
+    private record ScrollbarMetrics(int x, int trackTop, int trackBottom, int thumbY, int thumbTravel, int maxScroll) {
+        private int maxThumbY() {
+            return trackBottom - SCROLLBAR_THUMB_HEIGHT;
+        }
+
+        private boolean trackHit(double mouseX, double mouseY) {
+            return mouseX >= x && mouseX < x + SCROLLBAR_WIDTH && mouseY >= trackTop && mouseY < trackBottom;
+        }
+
+        private boolean thumbHit(double mouseX, double mouseY) {
+            return mouseX >= x && mouseX < x + SCROLLBAR_WIDTH && mouseY >= thumbY && mouseY < thumbY + SCROLLBAR_THUMB_HEIGHT;
+        }
     }
 
     private static <T> void toggle(Set<T> set, T value) {
