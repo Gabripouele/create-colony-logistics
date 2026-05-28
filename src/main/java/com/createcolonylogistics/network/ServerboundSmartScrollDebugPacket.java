@@ -78,7 +78,7 @@ public record ServerboundSmartScrollDebugPacket(
 
             logClientSnapshot(packet);
             logStack("server-stored", packet.selectedSlot(), storedStack);
-            CreateColonyLogistics.LOGGER.info("[SmartScrollDebug] ServerPath: player={} slot={} clipboardFound={} storedSlots={} clientAdapterList={} clientError='{}' clientModuleResources={} clientAdaptedResources={} clientRenderedRows={}",
+            CreateColonyLogistics.LOGGER.info("[SmartScrollDebug] ServerComparison: comparisonOnly=true renderAuthority=client serverPathAuthoritative=false player={} slot={} clipboardFound={} storedSlots={} clientAdapterList={} clientError='{}' clientModuleResources={} clientAdaptedResources={} clientRenderedRows={}",
                     player.getGameProfile().getName(),
                     packet.selectedSlot(),
                     clipboard.isPresent(),
