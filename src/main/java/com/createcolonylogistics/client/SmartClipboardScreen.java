@@ -68,8 +68,9 @@ public class SmartClipboardScreen extends Screen {
     private static final int COLONY_LINE_Y = TAB_Y + TAB_HEIGHT + 4;
     private static final int SUMMARY_LINE_Y = COLONY_LINE_Y + 12;
     private static final int CONTENT_LIST_TOP = SUMMARY_LINE_Y + 19;
+    private static final int SCROLL_DETAILS_TOP = COLONY_LINE_Y + 16;
     private static final int CONTENT_LIST_BOTTOM = 294;
-    private static final int SCROLL_STORAGE_GRID_TOP = 246;
+    private static final int SCROLL_STORAGE_GRID_TOP = 269;
     private static final int SCROLL_DETAILS_BOTTOM_GAP = 8;
     private static final int LIST_X = 39;
     private static final int LIST_WIDTH = 180;
@@ -1214,7 +1215,7 @@ public class SmartClipboardScreen extends Screen {
     }
 
     private int listTop(Tab tab) {
-        return topPos + CONTENT_LIST_TOP + (tab == Tab.SCROLLS ? 5 : 0);
+        return topPos + (tab == Tab.SCROLLS ? SCROLL_DETAILS_TOP : CONTENT_LIST_TOP);
     }
 
     private int listBottom() {
