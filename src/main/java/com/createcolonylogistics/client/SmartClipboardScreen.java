@@ -82,6 +82,8 @@ public class SmartClipboardScreen extends Screen {
     private static final int IMPORTANT_BUTTON_SIZE = 11;
     private static final int TREE_INDENT = 8;
     private static final int TREE_ROW_HEIGHT = 18;
+    private static final int RESOURCE_ROW_HEIGHT = 36;
+    private static final int RESOURCE_SEPARATOR_Y = 33;
     private static final int ROW_GAP = 2;
     private static final int LINE_HEIGHT = 10;
     private static final int COLLAPSED_HEIGHT = 28;
@@ -175,7 +177,9 @@ public class SmartClipboardScreen extends Screen {
             return;
         }
         if (activeTab == Tab.REQUESTS && !renderHoveredItemTooltip(graphics, mouseX, mouseY, listTop)) {
-            renderHoveredOverflowTooltip(graphics, mouseX, mouseY, listTop);
+            if (!renderHoveredTreeItemTooltip(graphics, mouseX, mouseY, listTop)) {
+                renderHoveredOverflowTooltip(graphics, mouseX, mouseY, listTop);
+            }
         }
     }
 
@@ -347,7 +351,8 @@ public class SmartClipboardScreen extends Screen {
         graphics.drawString(font, truncate(Component.translatable("screen.create_colony_logistics.smart_clipboard.progress", content.suppliedPercent(), content.usedPercent()), LIST_WIDTH), x, y, SECONDARY_TEXT, false);
         y += LINE_HEIGHT + 3;
 
-        for (ResourceLine resource : content.resources()) {
+        for (int i = 0; i < content.resources().size(); i++) {
+            ResourceLine resource = content.resources().get(i);
             int textWidth = Math.max(30, LIST_WIDTH - 22);
             graphics.renderItem(resource.stack(), x, y);
             graphics.drawString(font, truncate(Component.literal(sanitizeScrollLine(resource.name())), textWidth), x + 22, y + 1, PRIMARY_TEXT, false);
@@ -356,7 +361,10 @@ public class SmartClipboardScreen extends Screen {
             if (resource.deliveryOrWarehouseAmount() > 0) {
                 graphics.drawString(font, truncate(Component.literal(String.valueOf(resource.deliveryOrWarehouseAmount())), 24), x + LIST_WIDTH - 24, y + 11, SECONDARY_TEXT, false);
             }
-            y += 34;
+            if (i < content.resources().size() - 1) {
+                graphics.fill(x + 22, y + RESOURCE_SEPARATOR_Y, x + LIST_WIDTH, y + RESOURCE_SEPARATOR_Y + 1, DIVIDER_LINE);
+            }
+            y += RESOURCE_ROW_HEIGHT;
         }
         return y;
     }
@@ -976,7 +984,50 @@ public class SmartClipboardScreen extends Screen {
                 }
                 return true;
             }
-            y += 34;
+            y += RESOURCE_ROW_HEIGHT;
+        }
+        return false;
+    }
+
+    private boolean renderHoveredTreeItemTooltip(GuiGraphics graphics, int mouseX, int mouseY, int listTop) {
+        if (mouseX < leftPos + LIST_X || mouseX >= leftPos + LIST_X + LIST_WIDTH
+                || mouseY < listTop || mouseY >= listBottom(Tab.REQUESTS)) {
+            return false;
+        }
+
+        int x = leftPos + LIST_X;
+        int y = listTop - scroll;
+        for (int i : filteredEntryIndexes()) {
+            SmartClipboardReport.Entry entry = report.entries().get(i);
+            int cardHeight = entryHeight(entry, i);
+            if (expanded.contains(i) && hasExpandedDetails(entry)) {
+                int detailY = y + EXPANDED_TOP_PADDING;
+                detailY += valueLineHeight(entry.minimumStockRequest()
+                        ? Component.translatable("screen.create_colony_logistics.smart_clipboard.minimum_stock_request").getString()
+                        : null);
+                if (!entry.minimumStockRequest()) {
+                    detailY += valueLineHeight(entry.requestingWorkerName().orElse(null));
+                }
+                List<SmartClipboardReport.RequestTreeNode> dependencies = dependencyNodes(entry);
+                if (!dependencies.isEmpty()) {
+                    detailY += 2;
+                    for (int nodeIndex : visibleDependencyIndexes(entry, i)) {
+                        SmartClipboardReport.RequestTreeNode node = dependencies.get(nodeIndex);
+                        ItemStack stack = node.stack();
+                        if (!stack.isEmpty()) {
+                            int visibleDepth = Math.max(1, node.depth());
+                            int indent = Math.min(36, (visibleDepth - 1) * TREE_INDENT);
+                            int iconX = x + 4 + indent + 9;
+                            if (mouseX >= iconX && mouseX < iconX + 16 && mouseY >= detailY && mouseY < detailY + 16) {
+                                graphics.renderTooltip(font, stack, mouseX, mouseY);
+                                return true;
+                            }
+                        }
+                        detailY += TREE_ROW_HEIGHT;
+                    }
+                }
+            }
+            y += cardHeight + ROW_GAP;
         }
         return false;
     }
