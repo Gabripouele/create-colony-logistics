@@ -824,13 +824,9 @@ public class SmartClipboardScreen extends Screen {
         for (ResourceLine resource : content.resources()) {
             if (mouseX >= x && mouseX < x + 16 && mouseY >= y && mouseY < y + 16) {
                 ItemStack stack = resource.stack();
-                if (DomumOrnamentumRequestInspector.isDomumOrnamentumStack(stack)) {
-                    SmartClipboardReport.Entry smartInfoEntry = smartInfoEntryForStack(stack);
-                    if (smartInfoEntry != null) {
-                        graphics.renderComponentTooltip(font, buildApprovedSmartInfoTooltip(smartInfoEntry, stack), mouseX, mouseY, stack);
-                    } else {
-                        graphics.renderTooltip(font, stack, mouseX, mouseY);
-                    }
+                SmartClipboardReport.Entry smartInfoEntry = smartInfoEntryForStack(stack);
+                if (smartInfoEntry != null) {
+                    graphics.renderComponentTooltip(font, buildApprovedSmartInfoTooltip(smartInfoEntry, stack), mouseX, mouseY, stack);
                 } else {
                     graphics.renderTooltip(font, stack, mouseX, mouseY);
                 }
@@ -843,12 +839,12 @@ public class SmartClipboardScreen extends Screen {
 
     private SmartClipboardReport.Entry smartInfoEntryForStack(ItemStack stack) {
         for (SmartClipboardReport.Entry entry : report.entries()) {
-            if (isDomumOrnamentumEntry(entry) && ItemStack.isSameItemSameComponents(entry.requestedStack(), stack)) {
+            if (isArchitectsCutterEntry(entry) && ItemStack.isSameItemSameComponents(entry.requestedStack(), stack)) {
                 return entry;
             }
         }
         for (SmartClipboardReport.Entry entry : report.entries()) {
-            if (isDomumOrnamentumEntry(entry) && entry.requestedStack().is(stack.getItem())) {
+            if (isArchitectsCutterEntry(entry) && entry.requestedStack().is(stack.getItem())) {
                 return entry;
             }
         }
@@ -929,7 +925,7 @@ public class SmartClipboardScreen extends Screen {
         Minecraft minecraft = Minecraft.getInstance();
         Item.TooltipContext context = minecraft.level == null ? Item.TooltipContext.EMPTY : Item.TooltipContext.of(minecraft.level);
         List<Component> lines = new ArrayList<>(shownStack.getTooltipLines(context, minecraft.player, TooltipFlag.NORMAL));
-        if (!isDomumOrnamentumEntry(entry)) {
+        if (!isArchitectsCutterEntry(entry)) {
             return lines;
         }
         lines.add(Component.empty());
@@ -1302,6 +1298,10 @@ public class SmartClipboardScreen extends Screen {
 
     private boolean isDomumOrnamentumEntry(SmartClipboardReport.Entry entry) {
         return entry.doBlockId().startsWith("domum_ornamentum:");
+    }
+
+    private boolean isArchitectsCutterEntry(SmartClipboardReport.Entry entry) {
+        return isDomumOrnamentumEntry(entry) && entry.cutterRecipeId().isPresent();
     }
 
     private enum Tab {

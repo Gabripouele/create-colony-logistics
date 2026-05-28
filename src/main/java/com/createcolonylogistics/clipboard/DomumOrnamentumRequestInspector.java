@@ -59,6 +59,10 @@ public final class DomumOrnamentumRequestInspector {
         return findCutterRecipeHolder(recipeManager, provider, requestedStack).map(RecipeHolder::id);
     }
 
+    public static Optional<ResourceLocation> findExactCutterRecipe(RecipeManager recipeManager, HolderLookup.Provider provider, ItemStack requestedStack) {
+        return findExactCutterRecipeHolder(recipeManager, provider, requestedStack).map(RecipeHolder::id);
+    }
+
     public static List<IngredientRequirement> findCutterRequirements(RecipeManager recipeManager, HolderLookup.Provider provider, ItemStack requestedStack) {
         Optional<RecipeHolder<?>> recipe = findCutterRecipeHolder(recipeManager, provider, requestedStack);
         if (recipe.isEmpty()) {
@@ -146,13 +150,7 @@ public final class DomumOrnamentumRequestInspector {
         Optional<RecipeHolder<?>> compatibleMatch = Optional.empty();
         try {
             for (RecipeHolder<?> holder : recipeManager.getRecipes()) {
-                ResourceLocation typeId = BuiltInRegistries.RECIPE_TYPE.getKey(holder.value().getType());
-                boolean cutterType = typeId != null && typeId.getNamespace().equals(DOMUM_ORNAMENTUM)
-                        && typeId.getPath().contains(ARCHITECTS_CUTTER);
-                boolean cutterPath = holder.id().getNamespace().equals(DOMUM_ORNAMENTUM)
-                        && holder.id().getPath().contains(ARCHITECTS_CUTTER);
-
-                if (!cutterType && !cutterPath) {
+                if (!isArchitectsCutterRecipe(holder)) {
                     continue;
                 }
 
@@ -168,6 +166,33 @@ public final class DomumOrnamentumRequestInspector {
             return Optional.empty();
         }
         return compatibleMatch;
+    }
+
+    private static Optional<RecipeHolder<?>> findExactCutterRecipeHolder(RecipeManager recipeManager, HolderLookup.Provider provider, ItemStack requestedStack) {
+        try {
+            for (RecipeHolder<?> holder : recipeManager.getRecipes()) {
+                if (!isArchitectsCutterRecipe(holder)) {
+                    continue;
+                }
+
+                ItemStack result = holder.value().getResultItem(provider);
+                if (ItemStack.isSameItemSameComponents(result, requestedStack)) {
+                    return Optional.of(holder);
+                }
+            }
+        } catch (RuntimeException ignored) {
+            return Optional.empty();
+        }
+        return Optional.empty();
+    }
+
+    private static boolean isArchitectsCutterRecipe(RecipeHolder<?> holder) {
+        ResourceLocation typeId = BuiltInRegistries.RECIPE_TYPE.getKey(holder.value().getType());
+        boolean cutterType = typeId != null && typeId.getNamespace().equals(DOMUM_ORNAMENTUM)
+                && typeId.getPath().contains(ARCHITECTS_CUTTER);
+        boolean cutterPath = holder.id().getNamespace().equals(DOMUM_ORNAMENTUM)
+                && holder.id().getPath().contains(ARCHITECTS_CUTTER);
+        return cutterType || cutterPath;
     }
 
     private static List<MaterialCandidate> materialCandidatesFromComponents(ItemStack requestedStack) {

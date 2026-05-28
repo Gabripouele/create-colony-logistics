@@ -42,7 +42,7 @@ public final class ColonyProductionInspector {
     }
 
     private static List<IGenericRecipe> exactArchitectsCutterRecipes(Level level, ItemStack requestedStack) {
-        Optional<ResourceLocation> cutterRecipeId = DomumOrnamentumRequestInspector.findCutterRecipe(
+        Optional<ResourceLocation> cutterRecipeId = DomumOrnamentumRequestInspector.findExactCutterRecipe(
                 level.getRecipeManager(),
                 level.registryAccess(),
                 requestedStack
