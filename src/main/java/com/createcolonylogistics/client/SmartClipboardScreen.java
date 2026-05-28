@@ -976,12 +976,7 @@ public class SmartClipboardScreen extends Screen {
         for (ResourceLine resource : content.resources()) {
             if (mouseX >= x && mouseX < x + 16 && mouseY >= y && mouseY < y + 16) {
                 ItemStack stack = resource.stack();
-                SmartClipboardReport.Entry smartInfoEntry = smartInfoEntryForStack(stack);
-                if (smartInfoEntry != null) {
-                    graphics.renderComponentTooltip(font, buildApprovedSmartInfoTooltip(smartInfoEntry, stack), mouseX, mouseY, stack);
-                } else {
-                    graphics.renderTooltip(font, stack, mouseX, mouseY);
-                }
+                renderSmartInfoOrItemTooltip(graphics, stack, mouseX, mouseY);
                 return true;
             }
             y += RESOURCE_ROW_HEIGHT;
@@ -1019,7 +1014,7 @@ public class SmartClipboardScreen extends Screen {
                             int indent = Math.min(36, (visibleDepth - 1) * TREE_INDENT);
                             int iconX = x + 4 + indent + 9;
                             if (mouseX >= iconX && mouseX < iconX + 16 && mouseY >= detailY && mouseY < detailY + 16) {
-                                graphics.renderTooltip(font, stack, mouseX, mouseY);
+                                renderSmartInfoOrItemTooltip(graphics, stack, mouseX, mouseY);
                                 return true;
                             }
                         }
@@ -1030,6 +1025,15 @@ public class SmartClipboardScreen extends Screen {
             y += cardHeight + ROW_GAP;
         }
         return false;
+    }
+
+    private void renderSmartInfoOrItemTooltip(GuiGraphics graphics, ItemStack stack, int mouseX, int mouseY) {
+        SmartClipboardReport.Entry smartInfoEntry = smartInfoEntryForStack(stack);
+        if (smartInfoEntry != null) {
+            graphics.renderComponentTooltip(font, buildApprovedSmartInfoTooltip(smartInfoEntry, stack), mouseX, mouseY, stack);
+        } else {
+            graphics.renderTooltip(font, stack, mouseX, mouseY);
+        }
     }
 
     private SmartClipboardReport.Entry smartInfoEntryForStack(ItemStack stack) {
