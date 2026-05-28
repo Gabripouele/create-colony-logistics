@@ -9,6 +9,7 @@ import com.createcolonylogistics.network.ClientboundSmartClipboardReportPacket;
 import com.minecolonies.api.IMinecoloniesAPI;
 import com.minecolonies.api.colony.IColony;
 import com.minecolonies.api.colony.buildings.IBuilding;
+import com.minecolonies.api.colony.buildings.workerbuildings.ITownHall;
 import net.minecraft.network.chat.Component;
 import net.minecraft.server.level.ServerPlayer;
 import net.minecraft.world.InteractionHand;
@@ -38,6 +39,9 @@ public class SmartColonyClipboardItem extends Item {
             if (serverPlayer.isShiftKeyDown()) {
                 IBuilding building = IMinecoloniesAPI.getInstance().getColonyManager().getBuilding(context.getLevel(), context.getClickedPos());
                 if (building != null && building.getColony() != null) {
+                    if (building instanceof ITownHall) {
+                        return InteractionResult.SUCCESS;
+                    }
                     SmartClipboardRecipeTeachingService.teachRequestedArchitectsCutterRecipes(
                             serverPlayer,
                             serverPlayer.serverLevel(),

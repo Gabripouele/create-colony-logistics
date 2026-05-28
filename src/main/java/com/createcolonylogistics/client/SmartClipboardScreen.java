@@ -8,6 +8,7 @@ import com.createcolonylogistics.clipboard.SmartClipboardScrollStorage.ScrollLin
 import com.createcolonylogistics.network.ServerboundSmartClipboardDebugPacket;
 import com.createcolonylogistics.network.ServerboundSmartClipboardScrollPacket;
 import com.createcolonylogistics.network.ServerboundSmartScrollDebugPacket;
+import com.minecolonies.api.colony.IColonyView;
 import com.minecolonies.api.colony.buildings.views.IBuildingView;
 import com.minecolonies.api.colony.requestsystem.request.IRequest;
 import com.minecolonies.api.colony.requestsystem.requestable.deliveryman.Delivery;
@@ -43,6 +44,7 @@ import java.util.HashSet;
 import java.util.List;
 import java.util.Locale;
 import java.util.Map;
+import java.util.Optional;
 import java.util.Set;
 
 public class SmartClipboardScreen extends Screen {
@@ -141,7 +143,7 @@ public class SmartClipboardScreen extends Screen {
                 ? title
                 : Component.translatable("screen.create_colony_logistics.smart_clipboard.scrolls_title"), 196);
         graphics.drawString(font, headerTitle, leftPos + (PANEL_WIDTH - font.width(headerTitle)) / 2, topPos + TITLE_Y, TITLE_TEXT, false);
-        graphics.drawString(font, truncate(Component.literal(report.colonyName()), activeTab == Tab.REQUESTS ? LIST_WIDTH - IMPORTANT_BUTTON_SIZE - 5 : LIST_WIDTH), leftPos + LIST_X, topPos + COLONY_LINE_Y, SECONDARY_TEXT, false);
+        graphics.drawString(font, truncate(Component.literal(displayedColonyName()), activeTab == Tab.REQUESTS ? LIST_WIDTH - IMPORTANT_BUTTON_SIZE - 5 : LIST_WIDTH), leftPos + LIST_X, topPos + COLONY_LINE_Y, SECONDARY_TEXT, false);
         if (activeTab == Tab.REQUESTS) {
             renderImportantButton(graphics, mouseX, mouseY);
             graphics.drawString(font, truncate(Component.translatable("screen.create_colony_logistics.smart_clipboard.summary", report.activeRequestCount(), report.buildingCount()), LIST_WIDTH), leftPos + LIST_X, topPos + SUMMARY_LINE_Y, SECONDARY_TEXT, false);
@@ -378,6 +380,26 @@ public class SmartClipboardScreen extends Screen {
 
     private ResourceScrollContent buildClientResourceScrollRows(ItemStack selectedClientScroll) {
         return ResourceScrollContent.fromClientSelectedStack(selectedClientScroll);
+    }
+
+    private String displayedColonyName() {
+        if (activeTab == Tab.REQUESTS) {
+            return report.colonyName();
+        }
+        return selectedResourceScroll().map(this::resourceScrollColonyName).orElse("");
+    }
+
+    private Optional<ItemStack> selectedResourceScroll() {
+        List<ItemStack> scrolls = report.resourceScrolls();
+        if (selectedScroll >= 0 && selectedScroll < scrolls.size() && !scrolls.get(selectedScroll).isEmpty()) {
+            return Optional.of(scrolls.get(selectedScroll));
+        }
+        return Optional.empty();
+    }
+
+    private String resourceScrollColonyName(ItemStack scroll) {
+        IColonyView colony = ColonyId.readColonyViewFromItemStack(scroll);
+        return colony == null ? "" : colony.getName();
     }
 
     private String sanitizeScrollLine(String value) {
