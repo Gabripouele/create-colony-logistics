@@ -4,10 +4,20 @@ import com.createcolonylogistics.clipboard.SmartClipboardReport;
 import com.createcolonylogistics.network.ServerboundSmartClipboardDebugPacket;
 import com.createcolonylogistics.network.ServerboundSmartClipboardScrollPacket;
 import com.minecolonies.api.colony.buildings.views.IBuildingView;
-import com.minecolonies.api.colony.workorders.IWorkOrderView;
+import com.minecolonies.api.colony.requestsystem.request.IRequest;
+import com.minecolonies.api.colony.requestsystem.requestable.deliveryman.Delivery;
+import com.minecolonies.api.colony.requestsystem.token.IToken;
 import com.minecolonies.api.items.component.BuildingId;
+import com.minecolonies.api.items.component.ColonyId;
+import com.minecolonies.api.items.component.WarehouseSnapshot;
+import com.minecolonies.api.util.InventoryUtils;
+import com.minecolonies.api.util.ItemStackUtils;
+import com.minecolonies.api.colony.workorders.IWorkOrderView;
 import com.minecolonies.core.colony.buildings.moduleviews.BuildingResourcesModuleView;
+import com.minecolonies.core.colony.buildings.utils.BuildingBuilderResource.RessourceAvailability;
+import com.minecolonies.core.colony.buildings.utils.BuildingBuilderResource.ResourceComparator;
 import com.minecolonies.core.colony.buildings.utils.BuildingBuilderResource;
+import com.minecolonies.core.colony.buildings.workerbuildings.BuildingBuilder;
 import net.minecraft.client.Minecraft;
 import net.minecraft.client.gui.GuiGraphics;
 import net.minecraft.client.gui.components.Renderable;
@@ -18,12 +28,15 @@ import net.minecraft.resources.ResourceLocation;
 import net.minecraft.world.item.Item;
 import net.minecraft.world.item.ItemStack;
 import net.minecraft.world.item.TooltipFlag;
+import net.neoforged.neoforge.items.wrapper.InvWrapper;
 import net.neoforged.neoforge.network.PacketDistributor;
 
 import java.util.ArrayList;
+import java.util.Collection;
 import java.util.HashSet;
 import java.util.List;
 import java.util.Locale;
+import java.util.Map;
 import java.util.Set;
 
 public class SmartClipboardScreen extends Screen {
@@ -248,6 +261,10 @@ public class SmartClipboardScreen extends Screen {
 
     private int renderSelectedResourceScrollContent(GuiGraphics graphics, ItemStack scroll, int x, int y) {
         ResourceScrollContent content = ResourceScrollContent.from(scroll);
+        if (!content.error().isBlank()) {
+            graphics.drawString(font, truncate(Component.literal(content.error()), LIST_WIDTH), x, y, MUTED, false);
+            return y + 14;
+        }
         if (content.resources().isEmpty()) {
             graphics.drawString(font, truncate(Component.translatable("screen.create_colony_logistics.smart_clipboard.scroll_unregistered"), LIST_WIDTH), x, y, MUTED, false);
             return y + 14;
@@ -266,9 +283,12 @@ public class SmartClipboardScreen extends Screen {
             int textWidth = Math.max(30, LIST_WIDTH - 22);
             graphics.renderItem(resource.stack(), x, y);
             graphics.drawString(font, truncate(Component.literal(sanitizeScrollLine(resource.name())), textWidth), x + 22, y + 1, TEXT, false);
-            int statusColor = resource.missing() < 0 ? 0xFFFF5555 : MUTED;
+            int statusColor = resource.statusColor();
             graphics.drawString(font, truncate(Component.translatable("screen.create_colony_logistics.smart_clipboard.missing", resource.missing()), textWidth), x + 22, y + 11, statusColor, false);
             graphics.drawString(font, truncate(Component.translatable("screen.create_colony_logistics.smart_clipboard.supplied", resource.available(), resource.required()), textWidth), x + 22, y + 21, statusColor, false);
+            if (resource.deliveryOrWarehouseAmount() > 0) {
+                graphics.drawString(font, truncate(Component.literal(String.valueOf(resource.deliveryOrWarehouseAmount())), 24), x + LIST_WIDTH - 24, y + 11, MUTED, false);
+            }
             y += 34;
         }
         return y;
@@ -1021,19 +1041,40 @@ public class SmartClipboardScreen extends Screen {
         SCROLLS
     }
 
-    private record ResourceScrollContent(String buildingTitle, String projectTitle, int suppliedPercent, int usedPercent, List<ResourceLine> resources) {
+    private record ResourceScrollContent(String buildingTitle, String projectTitle, int suppliedPercent, int usedPercent, List<ResourceLine> resources, String error) {
         static ResourceScrollContent from(ItemStack scroll) {
             try {
+                if (!ColonyId.readFromItemStack(scroll).hasColonyId() || !BuildingId.readFromItemStack(scroll).hasId()) {
+                    return error("Resource Scroll is not linked.");
+                }
                 IBuildingView building = BuildingId.readBuildingViewFromItemStack(scroll);
                 if (building == null) {
-                    return empty();
+                    return error("Linked building is not available.");
                 }
-                BuildingResourcesModuleView module = building.getModuleViewByType(BuildingResourcesModuleView.class);
+                if (!(building instanceof BuildingBuilder.View builder)) {
+                    return error("Linked building is not a Builder Hut.");
+                }
+                BuildingResourcesModuleView module = builder.getModuleViewByType(BuildingResourcesModuleView.class);
                 if (module == null) {
-                    return empty();
+                    return error("Linked Builder Hut has no resource module.");
                 }
-                List<ResourceLine> resources = module.getResources().values().stream()
-                        .map(ResourceLine::from)
+                List<Delivery> deliveries = deliveryRequests(builder);
+                Map<String, Integer> warehouseSnapshot = WarehouseSnapshot.readFromItemStack(scroll).snapshot();
+                List<BuildingBuilderResource> adapted = new ArrayList<>();
+                for (BuildingBuilderResource resource : module.getResources().values()) {
+                    BuildingBuilderResource copy = new BuildingBuilderResource(resource.getItemStack().copy(), resource.getAvailable(), resource.getAmount());
+                    applyPlayerAndDeliveryAmounts(copy, builder, deliveries);
+                    adapted.add(copy);
+                }
+                adapted.sort(new ResourceComparator(
+                        RessourceAvailability.NOT_NEEDED,
+                        RessourceAvailability.HAVE_ENOUGH,
+                        RessourceAvailability.IN_DELIVERY,
+                        RessourceAvailability.NEED_MORE,
+                        RessourceAvailability.DONT_HAVE
+                ));
+                List<ResourceLine> resources = adapted.stream()
+                        .map(resource -> ResourceLine.from(resource, warehouseSnapshot))
                         .toList();
                 int requiredTotal = 0;
                 int suppliedTotal = 0;
@@ -1049,24 +1090,82 @@ public class SmartClipboardScreen extends Screen {
                         project = workOrder.getDisplayName().getString().replace("\n", "");
                     }
                 }
-                return new ResourceScrollContent(building.getBuildingDisplayName(), project, suppliedPercent, module.getProgress(), resources);
+                return new ResourceScrollContent(builder.getBuildingDisplayName(), project, suppliedPercent, module.getProgress(), resources, "");
             } catch (RuntimeException ignored) {
-                return empty();
+                return error("Resource Scroll data is unavailable.");
             }
         }
 
-        private static ResourceScrollContent empty() {
-            return new ResourceScrollContent("", "", 0, 0, List.of());
+        private static void applyPlayerAndDeliveryAmounts(BuildingBuilderResource resource, BuildingBuilder.View builder, List<Delivery> deliveries) {
+            Minecraft minecraft = Minecraft.getInstance();
+            if (minecraft.player != null && minecraft.player.isCreative()) {
+                resource.setPlayerAmount(resource.getAmount());
+            } else if (minecraft.player != null) {
+                resource.setPlayerAmount(InventoryUtils.getItemCountInItemHandler(
+                        new InvWrapper(minecraft.player.getInventory()),
+                        stack -> !ItemStackUtils.isEmpty(stack)
+                                && ItemStackUtils.compareItemStacksIgnoreStackSize(stack, resource.getItemStack()).booleanValue()
+                ));
+            }
+            resource.setAmountInDelivery(0);
+            for (Delivery delivery : deliveries) {
+                if (ItemStackUtils.compareItemStacksIgnoreStackSize(resource.getItemStack(), delivery.getStack(), false, true)) {
+                    resource.setAmountInDelivery(resource.getAmountInDelivery() + delivery.getStack().getCount());
+                }
+            }
+        }
+
+        private static List<Delivery> deliveryRequests(BuildingBuilder.View builder) {
+            List<Delivery> deliveries = new ArrayList<>();
+            for (Collection<IToken<?>> requests : builder.getOpenRequestsByCitizen().values()) {
+                addDeliveryRequests(builder, deliveries, requests);
+            }
+            return deliveries;
+        }
+
+        private static void addDeliveryRequests(BuildingBuilder.View builder, List<Delivery> deliveries, Collection<IToken<?>> tokens) {
+            for (IToken<?> token : tokens) {
+                IRequest<?> request = builder.getColony().getRequestManager().getRequestForToken(token);
+                if (request == null) {
+                    continue;
+                }
+                if (request.getRequest() instanceof Delivery delivery
+                        && delivery.getTarget().getInDimensionLocation().equals(builder.getID())) {
+                    deliveries.add(delivery);
+                }
+                if (request.hasChildren()) {
+                    addDeliveryRequests(builder, deliveries, request.getChildren());
+                }
+            }
+        }
+
+        private static ResourceScrollContent error(String message) {
+            return new ResourceScrollContent("", "", 0, 0, List.of(), message);
         }
     }
 
-    private record ResourceLine(ItemStack stack, String name, int missing, int available, int required) {
-        static ResourceLine from(BuildingBuilderResource resource) {
+    private record ResourceLine(ItemStack stack, String name, int missing, int available, int required, int deliveryOrWarehouseAmount, int statusColor) {
+        static ResourceLine from(BuildingBuilderResource resource, Map<String, Integer> warehouseSnapshot) {
             ItemStack stack = resource.getItemStack().copyWithCount(1);
             int missing = resource.getMissingFromPlayer();
             int available = resource.getAvailable();
             int required = resource.getAmount();
-            return new ResourceLine(stack, resource.getName(), missing, available, required);
+            int extra = resource.getAmountInDelivery() > 0
+                    ? resource.getAmountInDelivery()
+                    : warehouseSnapshot.getOrDefault(warehouseSnapshotKey(resource), 0);
+            return new ResourceLine(stack, resource.getName(), missing, available, required, extra, statusColor(resource));
+        }
+
+        private static String warehouseSnapshotKey(BuildingBuilderResource resource) {
+            ItemStack stack = resource.getItemStack();
+            return stack.getDescriptionId() + "-" + stack.getComponentsPatch().hashCode();
+        }
+
+        private static int statusColor(BuildingBuilderResource resource) {
+            return switch (resource.getAvailabilityStatus()) {
+                case DONT_HAVE, NEED_MORE -> 0xFFFF5555;
+                default -> MUTED;
+            };
         }
     }
 
