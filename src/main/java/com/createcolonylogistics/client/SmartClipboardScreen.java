@@ -1300,7 +1300,9 @@ public class SmartClipboardScreen extends Screen {
     }
 
     private boolean isArchitectsCutterEntry(SmartClipboardReport.Entry entry) {
-        return isDomumOrnamentumEntry(entry) && entry.cutterRecipeId().isPresent();
+        return isDomumOrnamentumEntry(entry)
+                && (entry.cutterRecipeId().isPresent()
+                || DomumOrnamentumRequestInspector.isMaterializedArchitectsCutterOutput(entry.requestedStack()));
     }
 
     private enum Tab {
@@ -1466,7 +1468,7 @@ public class SmartClipboardScreen extends Screen {
             ItemStack stack = resource.getItemStack().copyWithCount(1);
             int available = Math.max(0, resource.getAvailable());
             int required = Math.max(0, resource.getAmount());
-            int missing = available >= required ? 0 : Math.max(0, resource.getMissingFromPlayer());
+            int missing = Math.max(0, required - available);
             int extra = resource.getAmountInDelivery() > 0
                     ? resource.getAmountInDelivery()
                     : warehouseSnapshot.getOrDefault(warehouseSnapshotKey(resource), 0);

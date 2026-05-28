@@ -170,6 +170,39 @@ public final class DomumOrnamentumRequestInspector {
         }
     }
 
+    public static boolean isMaterializedArchitectsCutterOutput(ItemStack stack) {
+        if (stack.isEmpty() || !isDomumOrnamentumStack(stack)) {
+            return false;
+        }
+
+        try {
+            Object texturedBlock = domumBlock(stack);
+            if (texturedBlock == null || texturedBlockComponents(texturedBlock).isEmpty()) {
+                return false;
+            }
+
+            Object textureData = materialTextureData(stack);
+            if (textureData == null || materialTextureDataIsEmpty(textureData)) {
+                return false;
+            }
+
+            Map<?, ?> texturedComponents = texturedComponents(textureData);
+            if (texturedComponents.isEmpty()) {
+                return false;
+            }
+
+            for (Object component : texturedBlockComponents(texturedBlock)) {
+                Object material = texturedComponents.get(componentId(component));
+                if (material != null && !(material instanceof Block)) {
+                    return false;
+                }
+            }
+            return true;
+        } catch (RuntimeException | LinkageError | ReflectiveOperationException ignored) {
+            return false;
+        }
+    }
+
     private static boolean isSameMaterializedCutterOutput(ItemStack assembled, ItemStack requestedStack, int materialSlots) throws ReflectiveOperationException {
         if (assembled.isEmpty() || requestedStack.isEmpty() || !itemId(assembled).equals(itemId(requestedStack))) {
             return false;
