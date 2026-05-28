@@ -21,6 +21,7 @@ import com.minecolonies.core.colony.buildings.utils.BuildingBuilderResource.Ress
 import com.minecolonies.core.colony.buildings.utils.BuildingBuilderResource.ResourceComparator;
 import com.minecolonies.core.colony.buildings.utils.BuildingBuilderResource;
 import com.minecolonies.core.colony.buildings.workerbuildings.BuildingBuilder;
+import com.minecolonies.core.client.gui.WindowResourceList;
 import net.minecraft.client.Minecraft;
 import net.minecraft.client.gui.GuiGraphics;
 import net.minecraft.client.gui.components.Renderable;
@@ -408,7 +409,7 @@ public class SmartClipboardScreen extends Screen {
 
         int listTop = topPos + LIST_TOP;
         if (activeTab == Tab.SCROLLS) {
-            if (Screen.hasShiftDown() && scrollDebugHit(mouseX, mouseY)) {
+            if (Screen.hasShiftDown() && button != 1 && scrollDebugHit(mouseX, mouseY)) {
                 dumpSelectedScrollDebug();
                 return true;
             }
@@ -496,6 +497,11 @@ public class SmartClipboardScreen extends Screen {
                             i,
                             firstInventoryResourceScroll()
                     ));
+                } else if (button == 1 && Screen.hasShiftDown()) {
+                    activeTab = Tab.SCROLLS;
+                    selectedScroll = i;
+                    rememberState();
+                    openMineColoniesResourceScrollWindow(i, stack);
                 } else if (button == 1 || Screen.hasShiftDown()) {
                     activeTab = Tab.SCROLLS;
                     selectedScroll = nearestSelectedAfterRemoval(i);
@@ -513,6 +519,46 @@ public class SmartClipboardScreen extends Screen {
             }
         }
         return false;
+    }
+
+    private void openMineColoniesResourceScrollWindow(int slot, ItemStack selectedClientScroll) {
+        ResourceLocation itemId = selectedClientScroll.isEmpty() ? ResourceLocation.withDefaultNamespace("air") : BuiltInRegistries.ITEM.getKey(selectedClientScroll.getItem());
+        ColonyId colonyId = ColonyId.readFromItemStack(selectedClientScroll);
+        BuildingId buildingId = BuildingId.readFromItemStack(selectedClientScroll);
+        WarehouseSnapshot warehouseSnapshot = WarehouseSnapshot.readFromItemStack(selectedClientScroll);
+        IBuildingView buildingView = selectedClientScroll.isEmpty() ? null : BuildingId.readBuildingViewFromItemStack(selectedClientScroll);
+        boolean opened = false;
+        String failureReason = "";
+        try {
+            if (Minecraft.getInstance().player == null) {
+                failureReason = "no client player";
+            } else if (!(buildingView instanceof BuildingBuilder.View builder)) {
+                failureReason = buildingView == null ? "BuildingId.readBuildingViewFromItemStack returned null" : "resolved view is not BuildingBuilder.View";
+            } else {
+                Object window = new WindowResourceList(builder, warehouseSnapshot.snapshot());
+                window.getClass().getMethod("open").invoke(window);
+                opened = true;
+            }
+        } catch (ReflectiveOperationException exception) {
+            failureReason = exception.getClass().getSimpleName() + ": " + exception.getMessage();
+        } catch (RuntimeException exception) {
+            failureReason = exception.getClass().getSimpleName() + ": " + exception.getMessage();
+        }
+
+        CreateColonyLogistics.LOGGER.info("[SmartScrollParityTest] selectedStack={} slot={} hasColonyId={} colonyId={} dimension={} hasBuildingId={} buildingPos={} attemptingMineColoniesWindow=true builderView={} openedWindowResourceList={} failureReason='{}'",
+                itemId,
+                slot,
+                colonyId.hasColonyId(),
+                colonyId.id(),
+                colonyId.dimension().location(),
+                buildingId.hasId(),
+                buildingId.id(),
+                buildingView == null ? "none" : buildingView.getClass().getName(),
+                opened,
+                failureReason);
+        showScrollDebugMessage(opened
+                ? "Smart Scroll parity test opened MineColonies Resource Scroll window for slot " + slot
+                : "Smart Scroll parity test failed for slot " + slot + ": " + failureReason);
     }
 
     private void dumpSelectedScrollDebug() {
