@@ -1288,7 +1288,7 @@ public class SmartClipboardScreen extends Screen {
                 Map<String, Integer> warehouseSnapshot = WarehouseSnapshot.readFromItemStack(scroll).snapshot();
                 List<BuildingBuilderResource> adapted = new ArrayList<>();
                 for (BuildingBuilderResource resource : module.getResources().values()) {
-                    BuildingBuilderResource copy = new BuildingBuilderResource(resource.getItemStack().copy(), resource.getAvailable(), resource.getAmount());
+                    BuildingBuilderResource copy = new BuildingBuilderResource(resource.getItemStack().copy(), resource.getAmount(), resource.getAvailable());
                     applyPlayerAndDeliveryAmounts(copy, builder, deliveries);
                     adapted.add(copy);
                 }
