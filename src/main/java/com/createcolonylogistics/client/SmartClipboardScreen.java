@@ -1,5 +1,6 @@
 package com.createcolonylogistics.client;
 
+import com.createcolonylogistics.CreateColonyLogistics;
 import com.createcolonylogistics.clipboard.SmartClipboardReport;
 import com.createcolonylogistics.network.ServerboundSmartClipboardDebugPacket;
 import com.createcolonylogistics.network.ServerboundSmartClipboardScrollPacket;
@@ -465,6 +466,10 @@ public class SmartClipboardScreen extends Screen {
             int slotY = y;
             if (mouseX >= slotX && mouseX < slotX + 18 && mouseY >= slotY && mouseY < slotY + 18) {
                 ItemStack stack = i < report.resourceScrolls().size() ? report.resourceScrolls().get(i) : ItemStack.EMPTY;
+                if (Screen.hasShiftDown() && i == selectedScroll && !stack.isEmpty()) {
+                    dumpSelectedScrollDebug(i, stack);
+                    return true;
+                }
                 if (stack.isEmpty()) {
                     activeTab = Tab.SCROLLS;
                     selectedScroll = i;
@@ -490,7 +495,56 @@ public class SmartClipboardScreen extends Screen {
                 return true;
             }
         }
+        if (Screen.hasShiftDown() && selectedScrollContentHit(mouseX, mouseY)) {
+            List<ItemStack> scrolls = report.resourceScrolls();
+            ItemStack selected = selectedScroll >= 0 && selectedScroll < scrolls.size() ? scrolls.get(selectedScroll) : ItemStack.EMPTY;
+            if (!selected.isEmpty()) {
+                dumpSelectedScrollDebug(selectedScroll, selected);
+                return true;
+            }
+        }
         return false;
+    }
+
+    private boolean selectedScrollContentHit(double mouseX, double mouseY) {
+        int x = leftPos + LIST_X;
+        int y = topPos + LIST_TOP - scroll + 65;
+        return mouseX >= x && mouseX < x + LIST_WIDTH && mouseY >= y && mouseY < topPos + LIST_BOTTOM;
+    }
+
+    private void dumpSelectedScrollDebug(int slot, ItemStack scrollStack) {
+        ResourceScrollContent content = ResourceScrollContent.from(scrollStack);
+        ColonyId colonyId = ColonyId.readFromItemStack(scrollStack);
+        BuildingId buildingId = BuildingId.readFromItemStack(scrollStack);
+        WarehouseSnapshot warehouseSnapshot = WarehouseSnapshot.readFromItemStack(scrollStack);
+        IBuildingView building = BuildingId.readBuildingViewFromItemStack(scrollStack);
+        BuildingResourcesModuleView module = building instanceof BuildingBuilder.View builder
+                ? builder.getModuleViewByType(BuildingResourcesModuleView.class)
+                : null;
+        ResourceLocation itemId = BuiltInRegistries.ITEM.getKey(scrollStack.getItem());
+        boolean hasComponents = !scrollStack.getComponentsPatch().isEmpty();
+
+        CreateColonyLogistics.LOGGER.info("[SmartScrollDebug] Selection: activeTab={} selectedIndex={} slot={} item={} count={} hasComponents={}",
+                activeTab, selectedScroll, slot, itemId, scrollStack.getCount(), hasComponents);
+        CreateColonyLogistics.LOGGER.info("[SmartScrollDebug] Components: hasColonyId={} colonyId={} dimension={} hasBuildingId={} buildingPos={} hasWarehouseSnapshot={} warehouseEntries={}",
+                colonyId.hasColonyId(), colonyId.id(), colonyId.dimension().location(), buildingId.hasId(), buildingId.id(),
+                !warehouseSnapshot.hash().isEmpty() || !warehouseSnapshot.snapshot().isEmpty(), warehouseSnapshot.snapshot().size());
+        CreateColonyLogistics.LOGGER.info("[SmartScrollDebug] Resolution: buildingView={} class={} isBuilderView={} colonyView={} module={} workOrderId={} progress={}",
+                building != null, building == null ? "none" : building.getClass().getName(), building instanceof BuildingBuilder.View,
+                building != null && building.getColony() != null, module != null, module == null ? "n/a" : module.getWorkOrderId(),
+                module == null ? "n/a" : module.getProgress());
+        CreateColonyLogistics.LOGGER.info("[SmartScrollDebug] Adapter: entered=true moduleResources={} adaptedResources={} inventoryOverlay={} deliveryOverlay={} warehouseOverlay={} finalRows={} error='{}'",
+                content.moduleResourceCount(), content.adaptedResourceCount(), content.inventoryOverlayCount(),
+                content.deliveryOverlayCount(), content.warehouseOverlayCount(), content.resources().size(), content.error());
+        CreateColonyLogistics.LOGGER.info("[SmartScrollDebug] RenderPath: method=renderSelectedResourceScrollContent oldTooltipSummary=false newAdapterList={} invalidMessage={} bounds={}x{}+{},{}",
+                content.error().isBlank() && !content.resources().isEmpty(), !content.error().isBlank(), LIST_WIDTH,
+                LIST_BOTTOM - LIST_TOP, leftPos + LIST_X, topPos + LIST_TOP);
+        for (int i = 0; i < Math.min(5, content.resources().size()); i++) {
+            ResourceLine line = content.resources().get(i);
+            CreateColonyLogistics.LOGGER.info("[SmartScrollDebug] Row[{}]: name='{}' item={} missing={} available={} required={} deliveryOrWarehouse={} color={}",
+                    i, line.name(), BuiltInRegistries.ITEM.getKey(line.stack().getItem()), line.missing(), line.available(),
+                    line.required(), line.deliveryOrWarehouseAmount(), line.statusColor());
+        }
     }
 
     private ItemStack firstInventoryResourceScroll() {
@@ -1041,7 +1095,19 @@ public class SmartClipboardScreen extends Screen {
         SCROLLS
     }
 
-    private record ResourceScrollContent(String buildingTitle, String projectTitle, int suppliedPercent, int usedPercent, List<ResourceLine> resources, String error) {
+    private record ResourceScrollContent(
+            String buildingTitle,
+            String projectTitle,
+            int suppliedPercent,
+            int usedPercent,
+            List<ResourceLine> resources,
+            String error,
+            int moduleResourceCount,
+            int adaptedResourceCount,
+            int inventoryOverlayCount,
+            int deliveryOverlayCount,
+            int warehouseOverlayCount
+    ) {
         static ResourceScrollContent from(ItemStack scroll) {
             try {
                 if (!ColonyId.readFromItemStack(scroll).hasColonyId() || !BuildingId.readFromItemStack(scroll).hasId()) {
@@ -1076,6 +1142,11 @@ public class SmartClipboardScreen extends Screen {
                 List<ResourceLine> resources = adapted.stream()
                         .map(resource -> ResourceLine.from(resource, warehouseSnapshot))
                         .toList();
+                int inventoryOverlayCount = (int) adapted.stream().filter(resource -> resource.getPlayerAmount() > 0).count();
+                int deliveryOverlayCount = (int) adapted.stream().filter(resource -> resource.getAmountInDelivery() > 0).count();
+                int warehouseOverlayCount = (int) resources.stream()
+                        .filter(resource -> resource.deliveryOrWarehouseAmount() > 0)
+                        .count() - deliveryOverlayCount;
                 int requiredTotal = 0;
                 int suppliedTotal = 0;
                 for (ResourceLine resource : resources) {
@@ -1090,7 +1161,19 @@ public class SmartClipboardScreen extends Screen {
                         project = workOrder.getDisplayName().getString().replace("\n", "");
                     }
                 }
-                return new ResourceScrollContent(builder.getBuildingDisplayName(), project, suppliedPercent, module.getProgress(), resources, "");
+                return new ResourceScrollContent(
+                        builder.getBuildingDisplayName(),
+                        project,
+                        suppliedPercent,
+                        module.getProgress(),
+                        resources,
+                        "",
+                        module.getResources().size(),
+                        adapted.size(),
+                        inventoryOverlayCount,
+                        deliveryOverlayCount,
+                        Math.max(0, warehouseOverlayCount)
+                );
             } catch (RuntimeException ignored) {
                 return error("Resource Scroll data is unavailable.");
             }
@@ -1140,7 +1223,7 @@ public class SmartClipboardScreen extends Screen {
         }
 
         private static ResourceScrollContent error(String message) {
-            return new ResourceScrollContent("", "", 0, 0, List.of(), message);
+            return new ResourceScrollContent("", "", 0, 0, List.of(), message, 0, 0, 0, 0, 0);
         }
     }
 
