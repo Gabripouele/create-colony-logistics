@@ -4,6 +4,7 @@ import com.createcolonylogistics.CreateColonyLogistics;
 import com.createcolonylogistics.clipboard.SmartClipboardReport;
 import com.createcolonylogistics.network.ServerboundSmartClipboardDebugPacket;
 import com.createcolonylogistics.network.ServerboundSmartClipboardScrollPacket;
+import com.createcolonylogistics.network.ServerboundSmartScrollDebugPacket;
 import com.minecolonies.api.colony.buildings.views.IBuildingView;
 import com.minecolonies.api.colony.requestsystem.request.IRequest;
 import com.minecolonies.api.colony.requestsystem.requestable.deliveryman.Delivery;
@@ -516,13 +517,31 @@ public class SmartClipboardScreen extends Screen {
             CreateColonyLogistics.LOGGER.info("[SmartScrollDebug] no selected scroll activeTab={} selectedIndex={} storedScrolls={}",
                     activeTab, selectedScroll, scrolls.size());
             showScrollDebugMessage("Smart Scroll debug: no selected scroll");
+            PacketDistributor.sendToServer(new ServerboundSmartScrollDebugPacket(
+                    selectedScroll,
+                    ItemStack.EMPTY,
+                    false,
+                    "no selected scroll",
+                    0,
+                    0,
+                    0
+            ));
             return;
         }
-        dumpSelectedScrollDebug(selectedScroll, selected);
-        showScrollDebugMessage("Smart Scroll debug dumped for slot " + selectedScroll);
+        ResourceScrollContent content = dumpSelectedScrollDebug(selectedScroll, selected);
+        PacketDistributor.sendToServer(new ServerboundSmartScrollDebugPacket(
+                selectedScroll,
+                selected,
+                content.error().isBlank() && !content.resources().isEmpty(),
+                content.error(),
+                content.moduleResourceCount(),
+                content.adaptedResourceCount(),
+                content.resources().size()
+        ));
+        showScrollDebugMessage("Smart Scroll debug dumped for slot " + selectedScroll + " (server dump requested)");
     }
 
-    private void dumpSelectedScrollDebug(int slot, ItemStack scrollStack) {
+    private ResourceScrollContent dumpSelectedScrollDebug(int slot, ItemStack scrollStack) {
         ResourceScrollContent content = ResourceScrollContent.from(scrollStack);
         ColonyId colonyId = ColonyId.readFromItemStack(scrollStack);
         BuildingId buildingId = BuildingId.readFromItemStack(scrollStack);
@@ -555,6 +574,7 @@ public class SmartClipboardScreen extends Screen {
                     i, line.name(), BuiltInRegistries.ITEM.getKey(line.stack().getItem()), line.missing(), line.available(),
                     line.required(), line.deliveryOrWarehouseAmount(), line.statusColor());
         }
+        return content;
     }
 
     private void showScrollDebugMessage(String message) {
