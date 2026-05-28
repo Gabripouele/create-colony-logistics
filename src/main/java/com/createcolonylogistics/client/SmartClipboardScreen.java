@@ -529,6 +529,10 @@ public class SmartClipboardScreen extends Screen {
                     false,
                     ScrollLinkSnapshot.EMPTY,
                     false,
+                    false,
+                    "none",
+                    false,
+                    false,
                     "no selected scroll",
                     0,
                     0,
@@ -537,12 +541,18 @@ public class SmartClipboardScreen extends Screen {
             return;
         }
         ResourceScrollContent content = dumpSelectedScrollDebug(selectedScroll, selected);
+        ResolvedScrollBuilding resolved = ResourceScrollContent.resolveBuilderView(selected);
+        IBuildingView selectedView = resolved.building();
         PacketDistributor.sendToServer(new ServerboundSmartScrollDebugPacket(
                 selectedScroll,
                 String.valueOf(BuiltInRegistries.ITEM.getKey(selected.getItem())),
                 selected.getCount(),
                 !selected.getComponentsPatch().isEmpty(),
                 ScrollLinkSnapshot.from(selected),
+                true,
+                selectedView != null,
+                selectedView == null ? "none" : selectedView.getClass().getName(),
+                selectedView instanceof BuildingBuilder.View,
                 content.error().isBlank() && !content.resources().isEmpty(),
                 content.error(),
                 content.moduleResourceCount(),

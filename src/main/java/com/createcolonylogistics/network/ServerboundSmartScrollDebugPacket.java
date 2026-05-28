@@ -24,6 +24,10 @@ public record ServerboundSmartScrollDebugPacket(
         int selectedCount,
         boolean selectedHasComponents,
         ScrollLinkSnapshot selectedLink,
+        boolean clientResolutionAttempted,
+        boolean clientViewResolved,
+        String clientViewClass,
+        boolean clientIsBuildingBuilderView,
         boolean clientAdapterList,
         String clientError,
         int clientModuleResources,
@@ -45,6 +49,10 @@ public record ServerboundSmartScrollDebugPacket(
                 buffer.readBoolean(),
                 readSnapshot(buffer),
                 buffer.readBoolean(),
+                buffer.readBoolean(),
+                buffer.readUtf(),
+                buffer.readBoolean(),
+                buffer.readBoolean(),
                 buffer.readUtf(),
                 buffer.readVarInt(),
                 buffer.readVarInt(),
@@ -58,6 +66,10 @@ public record ServerboundSmartScrollDebugPacket(
         buffer.writeVarInt(selectedCount);
         buffer.writeBoolean(selectedHasComponents);
         writeSnapshot(buffer, selectedLink);
+        buffer.writeBoolean(clientResolutionAttempted);
+        buffer.writeBoolean(clientViewResolved);
+        buffer.writeUtf(clientViewClass);
+        buffer.writeBoolean(clientIsBuildingBuilderView);
         buffer.writeBoolean(clientAdapterList);
         buffer.writeUtf(clientError);
         buffer.writeVarInt(clientModuleResources);
@@ -94,7 +106,8 @@ public record ServerboundSmartScrollDebugPacket(
 
     private static void logClientSnapshot(ServerboundSmartScrollDebugPacket packet) {
         ScrollLinkSnapshot snapshot = packet.selectedLink() == null ? ScrollLinkSnapshot.EMPTY : packet.selectedLink();
-        CreateColonyLogistics.LOGGER.info("[SmartScrollDebug] Stack[client-selected]: slot={} item={} count={} hasComponents={} hasColonyId={} colonyId={} dimension={} hasBuildingId={} buildingPos={} viewResolved=n/a viewClass=client-snapshot isBuildingBuilderView=n/a",
+        CreateColonyLogistics.LOGGER.info("[SmartScrollDebug] Stack[client-selected]: renderAuthority=client selectedStackSource=client-selected-stack clientResolutionAttempted={} slot={} item={} count={} hasComponents={} hasColonyId={} colonyId={} dimension={} hasBuildingId={} buildingPos={} clientViewResolved={} clientViewClass={} isBuildingBuilderView={}",
+                packet.clientResolutionAttempted(),
                 packet.selectedSlot(),
                 packet.selectedItemId(),
                 packet.selectedCount(),
@@ -103,7 +116,10 @@ public record ServerboundSmartScrollDebugPacket(
                 snapshot.colonyId().id(),
                 snapshot.colonyId().dimension().location(),
                 snapshot.buildingId().hasId(),
-                snapshot.buildingId().id());
+                snapshot.buildingId().id(),
+                packet.clientViewResolved(),
+                packet.clientViewClass(),
+                packet.clientIsBuildingBuilderView());
     }
 
     private static void logStack(String label, int slot, ItemStack stack) {
