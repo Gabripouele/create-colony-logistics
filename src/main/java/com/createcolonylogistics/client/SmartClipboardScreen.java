@@ -1131,8 +1131,14 @@ public class SmartClipboardScreen extends Screen {
         lines.add(Component.translatable("screen.create_colony_logistics.smart_clipboard.tooltip.smart")
                 .withStyle(style -> style.withColor(SMART_INFO_HEADER_COLOR)));
         addApprovedSmartTooltipLine(lines, "screen.create_colony_logistics.smart_clipboard.tooltip.shape", humanizeDomumShape(entry));
-        addWrappedApprovedSmartTooltipLine(lines, "screen.create_colony_logistics.smart_clipboard.tooltip.can_learn", entry.canLearnCombo());
+        if (shouldShowTeachingFeedback(entry)) {
+            addWrappedApprovedSmartTooltipLine(lines, "screen.create_colony_logistics.smart_clipboard.tooltip.can_learn", entry.canLearnCombo());
+        }
         return lines;
+    }
+
+    private boolean shouldShowTeachingFeedback(SmartClipboardReport.Entry entry) {
+        return !entry.exactComboAlreadyTaught() && !entry.canLearnCombo().isEmpty();
     }
 
     private void addApprovedSmartTooltipLine(List<Component> lines, String key, String value) {
