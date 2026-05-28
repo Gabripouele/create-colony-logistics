@@ -1,5 +1,6 @@
 package com.createcolonylogistics.client;
 
+import com.mojang.blaze3d.platform.GlStateManager;
 import com.mojang.blaze3d.systems.RenderSystem;
 import com.createcolonylogistics.CreateColonyLogistics;
 import com.createcolonylogistics.clipboard.DomumOrnamentumRequestInspector;
@@ -250,12 +251,13 @@ public class SmartClipboardScreen extends Screen {
         if (!importantOnly) {
             try {
                 RenderSystem.enableBlend();
-                RenderSystem.defaultBlendFunc();
+                RenderSystem.blendFunc(GlStateManager.SourceFactor.SRC_ALPHA, GlStateManager.DestFactor.ONE);
                 graphics.setColor(1.0f, 1.0f, 1.0f, IMPORTANT_TOGGLE_GREEN_ALPHA);
                 graphics.blit(IMPORTANT_TOGGLE_OVERLAY, leftPos + IMPORTANT_TOGGLE_X, topPos + IMPORTANT_TOGGLE_Y,
                         IMPORTANT_TOGGLE_X, IMPORTANT_TOGGLE_Y, IMPORTANT_TOGGLE_WIDTH, IMPORTANT_TOGGLE_HEIGHT);
             } finally {
                 graphics.setColor(1.0f, 1.0f, 1.0f, 1.0f);
+                RenderSystem.defaultBlendFunc();
             }
         }
         if (importantToggleHit(mouseX, mouseY)) {
