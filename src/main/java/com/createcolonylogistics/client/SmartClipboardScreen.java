@@ -288,9 +288,8 @@ public class SmartClipboardScreen extends Screen {
             int textWidth = Math.max(30, LIST_WIDTH - 22);
             graphics.renderItem(resource.stack(), x, y);
             graphics.drawString(font, truncate(Component.literal(sanitizeScrollLine(resource.name())), textWidth), x + 22, y + 1, TEXT, false);
-            int statusColor = resource.statusColor();
-            graphics.drawString(font, truncate(Component.translatable("screen.create_colony_logistics.smart_clipboard.missing", resource.missing()), textWidth), x + 22, y + 11, statusColor, false);
-            graphics.drawString(font, truncate(Component.translatable("screen.create_colony_logistics.smart_clipboard.supplied", resource.available(), resource.required()), textWidth), x + 22, y + 21, statusColor, false);
+            graphics.drawString(font, truncate(Component.translatable("screen.create_colony_logistics.smart_clipboard.missing", resource.missing()), textWidth), x + 22, y + 11, resource.neededColor(), false);
+            graphics.drawString(font, truncate(Component.translatable("screen.create_colony_logistics.smart_clipboard.supplied", resource.available(), resource.required()), textWidth), x + 22, y + 21, resource.suppliedColor(), false);
             if (resource.deliveryOrWarehouseAmount() > 0) {
                 graphics.drawString(font, truncate(Component.literal(String.valueOf(resource.deliveryOrWarehouseAmount())), 24), x + LIST_WIDTH - 24, y + 11, MUTED, false);
             }
@@ -642,9 +641,9 @@ public class SmartClipboardScreen extends Screen {
         logHeldScrollComparison(scrollStack);
         for (int i = 0; i < Math.min(5, content.resources().size()); i++) {
             ResourceLine line = content.resources().get(i);
-            CreateColonyLogistics.LOGGER.info("[SmartScrollDebug] Row[{}]: name='{}' item={} missing={} available={} required={} deliveryOrWarehouse={} color={}",
+            CreateColonyLogistics.LOGGER.info("[SmartScrollDebug] Row[{}]: name='{}' item={} needed={} available={} required={} deliveryOrWarehouse={} neededColor={} suppliedColor={}",
                     i, line.name(), BuiltInRegistries.ITEM.getKey(line.stack().getItem()), line.missing(), line.available(),
-                    line.required(), line.deliveryOrWarehouseAmount(), line.statusColor());
+                    line.required(), line.deliveryOrWarehouseAmount(), line.neededColor(), line.suppliedColor());
         }
         return content;
     }
@@ -1462,16 +1461,16 @@ public class SmartClipboardScreen extends Screen {
     private record ResolvedScrollBuilding(IBuildingView building, String source) {
     }
 
-    private record ResourceLine(ItemStack stack, String name, int missing, int available, int required, int deliveryOrWarehouseAmount, int statusColor) {
+    private record ResourceLine(ItemStack stack, String name, int missing, int available, int required, int deliveryOrWarehouseAmount, int neededColor, int suppliedColor) {
         static ResourceLine from(BuildingBuilderResource resource, Map<String, Integer> warehouseSnapshot) {
             ItemStack stack = resource.getItemStack().copyWithCount(1);
-            int missing = resource.getMissingFromPlayer();
-            int available = resource.getAvailable();
-            int required = resource.getAmount();
+            int available = Math.max(0, resource.getAvailable());
+            int required = Math.max(0, resource.getAmount());
+            int missing = available >= required ? 0 : Math.max(0, resource.getMissingFromPlayer());
             int extra = resource.getAmountInDelivery() > 0
                     ? resource.getAmountInDelivery()
                     : warehouseSnapshot.getOrDefault(warehouseSnapshotKey(resource), 0);
-            return new ResourceLine(stack, resource.getName(), missing, available, required, extra, statusColor(resource));
+            return new ResourceLine(stack, resource.getName(), missing, available, required, extra, neededColor(missing), suppliedColor(available, required));
         }
 
         private static String warehouseSnapshotKey(BuildingBuilderResource resource) {
@@ -1479,11 +1478,12 @@ public class SmartClipboardScreen extends Screen {
             return stack.getDescriptionId() + "-" + stack.getComponentsPatch().hashCode();
         }
 
-        private static int statusColor(BuildingBuilderResource resource) {
-            return switch (resource.getAvailabilityStatus()) {
-                case DONT_HAVE, NEED_MORE -> 0xFFFF5555;
-                default -> MUTED;
-            };
+        private static int neededColor(int missing) {
+            return missing > 0 ? 0xFFE07D6F : MUTED;
+        }
+
+        private static int suppliedColor(int available, int required) {
+            return required > 0 && available >= required ? 0xFF78B86B : MUTED;
         }
     }
 

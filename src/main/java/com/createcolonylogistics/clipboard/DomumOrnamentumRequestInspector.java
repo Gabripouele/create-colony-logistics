@@ -131,11 +131,7 @@ public final class DomumOrnamentumRequestInspector {
             List<AssembledCutterRecipe> matches = new ArrayList<>();
             for (RecipeHolder<?> recipe : recipes) {
                 ItemStack assembled = assembleCutterRecipe(recipe.value(), inputObject, level.registryAccess()).copy();
-                Object assembledBlock = domumBlock(assembled);
-                if (assembledBlock == null || texturedBlockComponents(assembledBlock).size() != materialStacks.size()) {
-                    continue;
-                }
-                if (ItemStack.isSameItemSameComponents(assembled, requestedStack)) {
+                if (isSameMaterializedCutterOutput(assembled, requestedStack, materialStacks.size())) {
                     matches.add(new AssembledCutterRecipe(recipe, assembled));
                 }
             }
@@ -172,6 +168,32 @@ public final class DomumOrnamentumRequestInspector {
         } catch (LinkageError | ReflectiveOperationException ignored) {
             return Optional.empty();
         }
+    }
+
+    private static boolean isSameMaterializedCutterOutput(ItemStack assembled, ItemStack requestedStack, int materialSlots) throws ReflectiveOperationException {
+        if (assembled.isEmpty() || requestedStack.isEmpty() || !itemId(assembled).equals(itemId(requestedStack))) {
+            return false;
+        }
+        if (ItemStack.isSameItemSameComponents(assembled, requestedStack)) {
+            return true;
+        }
+        Object assembledBlock = domumBlock(assembled);
+        Object requestedBlock = domumBlock(requestedStack);
+        if (assembledBlock == null || requestedBlock == null) {
+            return false;
+        }
+        if (texturedBlockComponents(assembledBlock).size() != materialSlots
+                || texturedBlockComponents(requestedBlock).size() != materialSlots) {
+            return false;
+        }
+        Object assembledTexture = materialTextureData(assembled);
+        Object requestedTexture = materialTextureData(requestedStack);
+        if (assembledTexture == null || requestedTexture == null
+                || materialTextureDataIsEmpty(assembledTexture)
+                || materialTextureDataIsEmpty(requestedTexture)) {
+            return false;
+        }
+        return texturedComponents(assembledTexture).equals(texturedComponents(requestedTexture));
     }
 
     private static int cutterInputComplexity(List<ItemStack> materialStacks) {

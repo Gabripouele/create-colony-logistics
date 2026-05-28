@@ -41,7 +41,8 @@ public final class SmartClipboardRecipeTeachingService {
         Set<String> attempted = new LinkedHashSet<>();
         int taught = 0;
         int disabled = 0;
-        List<Component> detailMessages = new ArrayList<>();
+        List<Component> successMessages = new ArrayList<>();
+        List<Component> disabledMessages = new ArrayList<>();
 
         for (RequestAnalysisService.RequestReportEntry entry : analysis.groupedEntries().values().stream().flatMap(List::stream).toList()) {
             Optional<DomumOrnamentumRequestInspector.CutterRecipeMatch> match =
@@ -58,7 +59,7 @@ public final class SmartClipboardRecipeTeachingService {
                 TeachCheck check = canTeach(module, recipeManager, match.get());
                 if (check.status() == TeachStatus.DISABLED) {
                     disabled++;
-                    detailMessages.add(Component.literal(recipeName(match.get()) + " recipe is disabled.")
+                    disabledMessages.add(Component.literal(recipeName(match.get()) + " recipe is disabled.")
                             .withStyle(ChatFormatting.YELLOW));
                     continue;
                 }
@@ -72,17 +73,21 @@ public final class SmartClipboardRecipeTeachingService {
                 }
                 targetBuilding.markDirty();
                 taught++;
-                detailMessages.add(Component.literal(recipeName(match.get()) + " was taught.")
+                successMessages.add(Component.literal(recipeName(match.get()) + " was taught.")
                         .withStyle(ChatFormatting.DARK_GREEN));
             }
         }
 
-        for (Component message : detailMessages) {
-            player.sendSystemMessage(message);
+        for (Component message : successMessages) {
+            player.displayClientMessage(message, false);
+        }
+        for (Component message : disabledMessages) {
+            player.displayClientMessage(message, false);
         }
         if (taught > 0) {
             SoundUtils.playSuccessSound(player, player.blockPosition());
-            player.displayClientMessage(Component.literal(summary(taught, disabled)).withStyle(ChatFormatting.DARK_GREEN), true);
+            ChatFormatting summaryColor = disabled > 0 ? ChatFormatting.YELLOW : ChatFormatting.DARK_GREEN;
+            player.displayClientMessage(Component.literal(summary(taught, disabled)).withStyle(summaryColor), true);
         } else if (disabled > 0) {
             player.displayClientMessage(Component.literal(summary(taught, disabled)).withStyle(ChatFormatting.YELLOW), true);
         } else {

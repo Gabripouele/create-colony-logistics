@@ -63,7 +63,7 @@
   "screen.create_colony_logistics.smart_clipboard.required_resources": "Required Resources",
   "screen.create_colony_logistics.smart_clipboard.scroll_unregistered": "This Resource Scroll is not linked to a builder.",
   "screen.create_colony_logistics.smart_clipboard.progress": "Supplied %s%% / Used %s%%",
-  "screen.create_colony_logistics.smart_clipboard.missing": "Missing: %s",
+  "screen.create_colony_logistics.smart_clipboard.missing": "Needed: %s",
   "screen.create_colony_logistics.smart_clipboard.supplied": "Supplied: %s / %s",
   "screen.create_colony_logistics.smart_clipboard.requested": "Requested: %s",
   "screen.create_colony_logistics.smart_clipboard.requested_label": "Requested: ",
