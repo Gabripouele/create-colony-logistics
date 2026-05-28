@@ -270,7 +270,7 @@ public class SmartClipboardScreen extends Screen {
             return y + 14;
         }
         if (content.resources().isEmpty()) {
-            graphics.drawString(font, truncate(Component.translatable("screen.create_colony_logistics.smart_clipboard.scroll_unregistered"), LIST_WIDTH), x, y, MUTED, false);
+            graphics.drawString(font, truncate(Component.literal("This Builder is Idle."), LIST_WIDTH), x, y, MUTED, false);
             return y + 14;
         }
 
