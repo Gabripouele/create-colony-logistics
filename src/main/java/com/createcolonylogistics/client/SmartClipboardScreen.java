@@ -1,5 +1,6 @@
 package com.createcolonylogistics.client;
 
+import com.mojang.blaze3d.systems.RenderSystem;
 import com.createcolonylogistics.CreateColonyLogistics;
 import com.createcolonylogistics.clipboard.DomumOrnamentumRequestInspector;
 import com.createcolonylogistics.clipboard.SmartClipboardReport;
@@ -87,6 +88,7 @@ public class SmartClipboardScreen extends Screen {
     private static final int IMPORTANT_TOGGLE_WIDTH = 8;
     private static final int IMPORTANT_TOGGLE_HEIGHT = 9;
     private static final int IMPORTANT_TOGGLE_HITBOX_PADDING = 3;
+    private static final float IMPORTANT_TOGGLE_GREEN_ALPHA = 0.50f;
     private static final int TREE_INDENT = 8;
     private static final int TREE_ROW_HEIGHT = 18;
     private static final int RESOURCE_ROW_HEIGHT = 36;
@@ -149,8 +151,8 @@ public class SmartClipboardScreen extends Screen {
                 : Component.translatable("screen.create_colony_logistics.smart_clipboard.scrolls_title"), 196);
         graphics.drawString(font, headerTitle, leftPos + (PANEL_WIDTH - font.width(headerTitle)) / 2, topPos + TITLE_Y, TITLE_TEXT, false);
         graphics.drawString(font, truncate(Component.literal(displayedColonyName()), LIST_WIDTH), leftPos + LIST_X, topPos + COLONY_LINE_Y, SECONDARY_TEXT, false);
+        renderImportantToggle(graphics, mouseX, mouseY);
         if (activeTab == Tab.REQUESTS) {
-            renderImportantToggle(graphics, mouseX, mouseY);
             graphics.drawString(font, truncate(Component.translatable("screen.create_colony_logistics.smart_clipboard.summary", report.activeRequestCount(), report.buildingCount()), LIST_WIDTH), leftPos + LIST_X, topPos + SUMMARY_LINE_Y, SECONDARY_TEXT, false);
         }
 
@@ -245,14 +247,19 @@ public class SmartClipboardScreen extends Screen {
     }
 
     private void renderImportantToggle(GuiGraphics graphics, int mouseX, int mouseY) {
-        if (importantOnly) {
-            graphics.blit(IMPORTANT_TOGGLE_OVERLAY, leftPos + IMPORTANT_TOGGLE_X, topPos + IMPORTANT_TOGGLE_Y,
-                    IMPORTANT_TOGGLE_X, IMPORTANT_TOGGLE_Y, IMPORTANT_TOGGLE_WIDTH, IMPORTANT_TOGGLE_HEIGHT);
+        if (!importantOnly) {
+            try {
+                RenderSystem.setShaderColor(1.0f, 1.0f, 1.0f, IMPORTANT_TOGGLE_GREEN_ALPHA);
+                graphics.blit(IMPORTANT_TOGGLE_OVERLAY, leftPos + IMPORTANT_TOGGLE_X, topPos + IMPORTANT_TOGGLE_Y,
+                        IMPORTANT_TOGGLE_X, IMPORTANT_TOGGLE_Y, IMPORTANT_TOGGLE_WIDTH, IMPORTANT_TOGGLE_HEIGHT);
+            } finally {
+                RenderSystem.setShaderColor(1.0f, 1.0f, 1.0f, 1.0f);
+            }
         }
         if (importantToggleHit(mouseX, mouseY)) {
             graphics.renderTooltip(font, Component.translatable(importantOnly
-                    ? "screen.create_colony_logistics.smart_clipboard.filtering_important"
-                    : "screen.create_colony_logistics.smart_clipboard.filtering_all"), mouseX, mouseY);
+                    ? "screen.create_colony_logistics.smart_clipboard.toggle_all_clipboard"
+                    : "screen.create_colony_logistics.smart_clipboard.toggle_important_clipboard"), mouseX, mouseY);
         }
     }
 
@@ -524,6 +531,12 @@ public class SmartClipboardScreen extends Screen {
             return true;
         }
 
+        if (importantToggleHit(mouseX, mouseY)) {
+            importantOnly = !importantOnly;
+            scroll = 0;
+            return true;
+        }
+
         int listTop = listTop();
         if (activeTab == Tab.SCROLLS) {
             if (Screen.hasShiftDown() && button != 1 && scrollDebugHit(mouseX, mouseY)) {
@@ -541,12 +554,6 @@ public class SmartClipboardScreen extends Screen {
         if (Screen.hasShiftDown() && scrollDebugHit(mouseX, mouseY)) {
             CreateColonyLogistics.LOGGER.info("[SmartScrollDebug] ignored: not Scrolls tab activeTab={}", activeTab);
             showScrollDebugMessage("Smart Scroll debug ignored: not Scrolls tab");
-        }
-
-        if (importantToggleHit(mouseX, mouseY)) {
-            importantOnly = !importantOnly;
-            scroll = 0;
-            return true;
         }
 
         int y = listTop - scroll;
