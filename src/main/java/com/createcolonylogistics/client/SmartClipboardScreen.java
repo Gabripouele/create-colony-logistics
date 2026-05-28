@@ -8,6 +8,7 @@ import com.createcolonylogistics.clipboard.SmartClipboardScrollStorage.ScrollLin
 import com.createcolonylogistics.network.ServerboundSmartClipboardDebugPacket;
 import com.createcolonylogistics.network.ServerboundSmartClipboardScrollPacket;
 import com.createcolonylogistics.network.ServerboundSmartScrollDebugPacket;
+import com.createcolonylogistics.registry.CCLItems;
 import com.minecolonies.api.colony.buildings.views.IBuildingView;
 import com.minecolonies.api.colony.requestsystem.request.IRequest;
 import com.minecolonies.api.colony.requestsystem.requestable.deliveryman.Delivery;
@@ -48,15 +49,23 @@ import java.util.Set;
 public class SmartClipboardScreen extends Screen {
     private static final ResourceLocation STOCK_KEEPER_TEXTURE = ResourceLocation.fromNamespaceAndPath(CreateColonyLogistics.MOD_ID, "textures/gui/smart_clipboard_gui.png");
     private static final ResourceLocation RESOURCE_SCROLL_ID = ResourceLocation.fromNamespaceAndPath("minecolonies", "resourcescroll");
-    private static final int IMAGE_WIDTH = 256;
-    private static final int IMAGE_HEIGHT = 316;
-    private static final int HEADER_HEIGHT = 36;
-    private static final int BODY_HEIGHT = 20;
-    private static final int BOTTOM_HEIGHT = 20;
+    private static final int TEXTURE_WIDTH = 256;
+    private static final int TEXTURE_HEIGHT = 256;
+    private static final int PANEL_WIDTH = 256;
+    private static final int PANEL_HEIGHT = 316;
+    private static final int TOP_CAP_HEIGHT = 36;
+    private static final int BODY_SLICE_HEIGHT = 20;
+    private static final int BOTTOM_CAP_HEIGHT = 20;
+    private static final int BODY_SLICE_U = 0;
+    private static final int BODY_SLICE_V = 48;
+    private static final int BOTTOM_CAP_U = 0;
+    private static final int BOTTOM_CAP_V = 140;
+    private static final int TITLE_Y = 9;
+    private static final int TAB_Y = TITLE_Y + 20;
+    private static final int CONTENT_LIST_TOP = 58;
+    private static final int CONTENT_LIST_BOTTOM = 294;
     private static final int LIST_X = 39;
     private static final int LIST_WIDTH = 180;
-    private static final int LIST_TOP = 50;
-    private static final int LIST_BOTTOM = 294;
     private static final int SCROLL_X = 219;
     private static final int IMPORTANT_BUTTON_SIZE = 11;
     private static final int TREE_INDENT = 8;
@@ -77,9 +86,10 @@ public class SmartClipboardScreen extends Screen {
     private static final int SMART_INFO_HEADER_COLOR = 0xA0A0A0;
     private static final int SMART_INFO_LABEL_COLOR = 0xFFF2D78C;
     private static final int SMART_INFO_VALUE_COLOR = 0xFF8FA7FF;
-    private static final int RESOURCE_SCROLL_SOFT_RED = 0xFFD88A7A;
-    private static final int TAB_WIDTH = 58;
-    private static final int TAB_HEIGHT = 16;
+    private static final int RESOURCE_SCROLL_SOFT_RED = 0xFFB84A3A;
+    private static final int TAB_WIDTH = 20;
+    private static final int TAB_HEIGHT = 20;
+    private static final int TAB_ICON_PADDING = 2;
     private static final int SCROLL_SLOT_SIZE = 20;
     private static final int SCROLL_SLOT_COLUMNS = 9;
 
@@ -105,8 +115,8 @@ public class SmartClipboardScreen extends Screen {
 
     @Override
     protected void init() {
-        leftPos = (width - IMAGE_WIDTH) / 2;
-        topPos = (height - IMAGE_HEIGHT) / 2;
+        leftPos = (width - PANEL_WIDTH) / 2;
+        topPos = (height - PANEL_HEIGHT) / 2;
     }
 
     @Override
@@ -118,7 +128,7 @@ public class SmartClipboardScreen extends Screen {
         Component headerTitle = truncate(activeTab == Tab.REQUESTS
                 ? title
                 : Component.translatable("screen.create_colony_logistics.smart_clipboard.scrolls_title"), 196);
-        graphics.drawString(font, headerTitle, leftPos + (IMAGE_WIDTH - font.width(headerTitle)) / 2, topPos + 9, TITLE_TEXT, false);
+        graphics.drawString(font, headerTitle, leftPos + (PANEL_WIDTH - font.width(headerTitle)) / 2, topPos + TITLE_Y, TITLE_TEXT, false);
         graphics.drawString(font, truncate(Component.literal(report.colonyName()), activeTab == Tab.REQUESTS ? LIST_WIDTH - IMPORTANT_BUTTON_SIZE - 5 : LIST_WIDTH), leftPos + LIST_X, topPos + 27, SECONDARY_TEXT, false);
         if (activeTab == Tab.REQUESTS) {
             renderImportantButton(graphics, mouseX, mouseY);
@@ -127,8 +137,8 @@ public class SmartClipboardScreen extends Screen {
                 ? Component.translatable("screen.create_colony_logistics.smart_clipboard.summary", report.activeRequestCount(), report.buildingCount())
                 : Component.translatable("screen.create_colony_logistics.smart_clipboard.scrolls_summary", nonEmptyScrollCount()), LIST_WIDTH), leftPos + LIST_X, topPos + 39, SECONDARY_TEXT, false);
 
-        int listTop = topPos + LIST_TOP + (activeTab == Tab.SCROLLS ? 5 : 0);
-        int listBottom = topPos + LIST_BOTTOM;
+        int listTop = listTop();
+        int listBottom = listBottom();
         graphics.fill(leftPos + LIST_X, listTop - 3, leftPos + LIST_X + LIST_WIDTH, listTop - 2, DIVIDER_LINE);
         scroll = Math.min(scroll, maxScroll(listTop, listBottom));
         graphics.enableScissor(leftPos + LIST_X, listTop, leftPos + LIST_X + LIST_WIDTH, listBottom);
@@ -143,11 +153,14 @@ public class SmartClipboardScreen extends Screen {
             int thumbHeight = Math.max(18, trackHeight * trackHeight / contentHeight);
             int maxScroll = maxScroll(listTop, listBottom);
             int thumbY = trackTop + (maxScroll == 0 ? 0 : scroll * (trackHeight - thumbHeight) / maxScroll);
-            renderStockKeeperScrollbar(graphics, thumbY, thumbHeight);
+            renderStockKeeperScrollbar(graphics, thumbY, thumbHeight, listTop, listBottom);
         }
 
         for (Renderable renderable : renderables) {
             renderable.render(graphics, mouseX, mouseY, partialTick);
+        }
+        if (renderHoveredTabTooltip(graphics, mouseX, mouseY)) {
+            return;
         }
         if (activeTab == Tab.SCROLLS && (renderHoveredScrollTooltip(graphics, mouseX, mouseY, listTop)
                 || renderHoveredScrollResourceTooltip(graphics, mouseX, mouseY, listTop))) {
@@ -159,11 +172,11 @@ public class SmartClipboardScreen extends Screen {
     }
 
     private void renderPageTabs(GuiGraphics graphics, int mouseX, int mouseY) {
-        renderPageTab(graphics, Tab.REQUESTS, leftPos + 42, topPos - TAB_HEIGHT + 4, Component.translatable("screen.create_colony_logistics.smart_clipboard.tab_requests"), mouseX, mouseY);
-        renderPageTab(graphics, Tab.SCROLLS, leftPos + 103, topPos - TAB_HEIGHT + 4, Component.translatable("screen.create_colony_logistics.smart_clipboard.tab_scrolls"), mouseX, mouseY);
+        renderPageTab(graphics, Tab.REQUESTS, tabX(Tab.REQUESTS), tabY());
+        renderPageTab(graphics, Tab.SCROLLS, tabX(Tab.SCROLLS), tabY());
     }
 
-    private void renderPageTab(GuiGraphics graphics, Tab tab, int x, int y, Component label, int mouseX, int mouseY) {
+    private void renderPageTab(GuiGraphics graphics, Tab tab, int x, int y) {
         boolean active = activeTab == tab;
         int fill = active ? 0xFFE1C78F : 0xCC8D7F6B;
         int border = active ? TITLE_TEXT : DIVIDER_LINE;
@@ -171,7 +184,39 @@ public class SmartClipboardScreen extends Screen {
         graphics.fill(x, y, x + TAB_WIDTH, y + 1, border);
         graphics.fill(x, y, x + 1, y + TAB_HEIGHT, border);
         graphics.fill(x + TAB_WIDTH - 1, y, x + TAB_WIDTH, y + TAB_HEIGHT, border);
-        graphics.drawString(font, truncate(label, TAB_WIDTH - 8), x + 4, y + 5, active ? TITLE_TEXT : INACTIVE_TAB_TEXT, false);
+        graphics.renderItem(tabIcon(tab), x + TAB_ICON_PADDING, y + TAB_ICON_PADDING);
+    }
+
+    private boolean renderHoveredTabTooltip(GuiGraphics graphics, int mouseX, int mouseY) {
+        for (Tab tab : Tab.values()) {
+            if (tabHit(mouseX, mouseY, tabX(tab), tabY())) {
+                graphics.renderTooltip(font, Component.literal(tabTooltip(tab)), mouseX, mouseY);
+                return true;
+            }
+        }
+        return false;
+    }
+
+    private ItemStack tabIcon(Tab tab) {
+        if (tab == Tab.REQUESTS) {
+            return new ItemStack(CCLItems.SMART_COLONY_CLIPBOARD.get());
+        }
+        return BuiltInRegistries.ITEM.getOptional(RESOURCE_SCROLL_ID)
+                .map(ItemStack::new)
+                .orElse(ItemStack.EMPTY);
+    }
+
+    private String tabTooltip(Tab tab) {
+        return tab == Tab.REQUESTS ? "Smart Clipboard Tab" : "Smart Resource Tab";
+    }
+
+    private int tabX(Tab tab) {
+        int center = leftPos + PANEL_WIDTH / 2;
+        return tab == Tab.REQUESTS ? center - TAB_WIDTH - 3 : center + 3;
+    }
+
+    private int tabY() {
+        return topPos + TAB_Y;
     }
 
     private void renderImportantButton(GuiGraphics graphics, int mouseX, int mouseY) {
@@ -440,7 +485,7 @@ public class SmartClipboardScreen extends Screen {
             return true;
         }
 
-        int listTop = topPos + LIST_TOP;
+        int listTop = listTop();
         if (activeTab == Tab.SCROLLS) {
             if (Screen.hasShiftDown() && button != 1 && scrollDebugHit(mouseX, mouseY)) {
                 dumpSelectedScrollDebug();
@@ -489,18 +534,18 @@ public class SmartClipboardScreen extends Screen {
     private boolean scrollDebugHit(double mouseX, double mouseY) {
         return mouseX >= leftPos + LIST_X
                 && mouseX < leftPos + LIST_X + LIST_WIDTH
-                && mouseY >= topPos + LIST_TOP
-                && mouseY < topPos + LIST_BOTTOM;
+                && mouseY >= listTop()
+                && mouseY < listBottom();
     }
 
     private boolean handleTabClick(double mouseX, double mouseY) {
-        if (tabHit(mouseX, mouseY, leftPos + 42, topPos - TAB_HEIGHT + 4)) {
+        if (tabHit(mouseX, mouseY, tabX(Tab.REQUESTS), tabY())) {
             activeTab = Tab.REQUESTS;
             rememberState();
             scroll = 0;
             return true;
         }
-        if (tabHit(mouseX, mouseY, leftPos + 103, topPos - TAB_HEIGHT + 4)) {
+        if (tabHit(mouseX, mouseY, tabX(Tab.SCROLLS), tabY())) {
             activeTab = Tab.SCROLLS;
             rememberState();
             scroll = 0;
@@ -515,7 +560,7 @@ public class SmartClipboardScreen extends Screen {
 
     private boolean handleScrollClick(double mouseX, double mouseY, int button) {
         int x = leftPos + LIST_X;
-        int y = topPos + LIST_TOP + 5 - scroll + 13;
+        int y = listTop(Tab.SCROLLS) - scroll + 13;
         for (int i = 0; i < SmartClipboardScrollStorage.SLOT_COUNT; i++) {
             int slotX = scrollSlotX(x, i);
             int slotY = scrollSlotY(y, i);
@@ -670,7 +715,7 @@ public class SmartClipboardScreen extends Screen {
                 content.deliveryOverlayCount(), content.warehouseOverlayCount(), content.resources().size(), content.error());
         CreateColonyLogistics.LOGGER.info("[SmartScrollDebug] RenderPath: method=renderSelectedScrollFromClientStack renderAuthority=client oldTooltipSummary=false clientAdapterList={} invalidMessage={} bounds={}x{}+{},{}",
                 content.error().isBlank() && !content.resources().isEmpty(), !content.error().isBlank(), LIST_WIDTH,
-                LIST_BOTTOM - LIST_TOP, leftPos + LIST_X, topPos + LIST_TOP);
+                listBottom(Tab.SCROLLS) - listTop(Tab.SCROLLS), leftPos + LIST_X, listTop(Tab.SCROLLS));
         logHeldScrollComparison(scrollStack);
         for (int i = 0; i < Math.min(5, content.resources().size()); i++) {
             ResourceLine line = content.resources().get(i);
@@ -755,28 +800,32 @@ public class SmartClipboardScreen extends Screen {
 
     @Override
     public boolean mouseScrolled(double mouseX, double mouseY, double scrollX, double scrollY) {
-        int visible = LIST_BOTTOM - LIST_TOP;
+        int visible = listBottom() - listTop();
         scroll = Math.max(0, Math.min(scroll - (int) (scrollY * 18), Math.max(0, contentHeight - visible)));
         return true;
     }
 
     private void renderStockKeeperPanel(GuiGraphics graphics) {
-        graphics.blit(STOCK_KEEPER_TEXTURE, leftPos, topPos, 0, 0, IMAGE_WIDTH, HEADER_HEIGHT);
+        int panelBottom = topPos + PANEL_HEIGHT;
+        int bottomCapY = panelBottom - BOTTOM_CAP_HEIGHT;
+        int bodyStartY = topPos + TOP_CAP_HEIGHT;
+        int bodyEndY = bottomCapY;
+        graphics.blit(STOCK_KEEPER_TEXTURE, leftPos, topPos, 0, 0, PANEL_WIDTH, TOP_CAP_HEIGHT);
         graphics.blit(STOCK_KEEPER_TEXTURE, leftPos + 31, topPos + 17, 31, 48, 194, 18);
-        for (int y = topPos + HEADER_HEIGHT; y < topPos + IMAGE_HEIGHT - BOTTOM_HEIGHT - BODY_HEIGHT; y += BODY_HEIGHT) {
-            int height = Math.min(BODY_HEIGHT, topPos + IMAGE_HEIGHT - BOTTOM_HEIGHT - BODY_HEIGHT - y);
-            graphics.blit(STOCK_KEEPER_TEXTURE, leftPos, y, 0, 48, IMAGE_WIDTH, height);
+        for (int y = bodyStartY; y < bodyEndY; y += BODY_SLICE_HEIGHT) {
+            int height = Math.min(BODY_SLICE_HEIGHT, bodyEndY - y);
+            graphics.blit(STOCK_KEEPER_TEXTURE, leftPos, y, BODY_SLICE_U, BODY_SLICE_V, PANEL_WIDTH, height);
         }
-        graphics.blit(STOCK_KEEPER_TEXTURE, leftPos, topPos + IMAGE_HEIGHT - BOTTOM_HEIGHT, 0, 140, IMAGE_WIDTH, BOTTOM_HEIGHT);
+        graphics.blit(STOCK_KEEPER_TEXTURE, leftPos, bottomCapY, BOTTOM_CAP_U, BOTTOM_CAP_V, PANEL_WIDTH, BOTTOM_CAP_HEIGHT);
     }
 
-    private void renderStockKeeperScrollbar(GuiGraphics graphics, int thumbY, int thumbHeight) {
+    private void renderStockKeeperScrollbar(GuiGraphics graphics, int thumbY, int thumbHeight, int listTop, int listBottom) {
         int x = leftPos + SCROLL_X;
-        graphics.blit(STOCK_KEEPER_TEXTURE, x, topPos + LIST_TOP, 219, 192, 5, 4);
-        for (int y = topPos + LIST_TOP + 4; y < topPos + LIST_BOTTOM - 5; y++) {
+        graphics.blit(STOCK_KEEPER_TEXTURE, x, listTop, 219, 192, 5, 4);
+        for (int y = listTop + 4; y < listBottom - 5; y++) {
             graphics.blit(STOCK_KEEPER_TEXTURE, x, y, 219, 196, 5, 1);
         }
-        graphics.blit(STOCK_KEEPER_TEXTURE, x, topPos + LIST_BOTTOM - 5, 219, 207, 5, 5);
+        graphics.blit(STOCK_KEEPER_TEXTURE, x, listBottom - 5, 219, 207, 5, 5);
         graphics.blit(STOCK_KEEPER_TEXTURE, x, thumbY, 219, 197, 5, Math.min(9, thumbHeight));
     }
 
@@ -1156,6 +1205,22 @@ public class SmartClipboardScreen extends Screen {
         return count;
     }
 
+    private int listTop() {
+        return listTop(activeTab);
+    }
+
+    private int listTop(Tab tab) {
+        return topPos + CONTENT_LIST_TOP + (tab == Tab.SCROLLS ? 5 : 0);
+    }
+
+    private int listBottom() {
+        return listBottom(activeTab);
+    }
+
+    private int listBottom(Tab tab) {
+        return topPos + CONTENT_LIST_BOTTOM;
+    }
+
     private int scrollSlotX(int x, int slot) {
         return x + (slot % SCROLL_SLOT_COLUMNS) * SCROLL_SLOT_SIZE;
     }
@@ -1192,7 +1257,7 @@ public class SmartClipboardScreen extends Screen {
                 return i;
             }
         }
-        return Math.max(0, Math.min(removedSlot, 8));
+        return Math.max(0, Math.min(removedSlot, SmartClipboardScrollStorage.SLOT_COUNT - 1));
     }
 
     private void rememberState() {
