@@ -1,6 +1,7 @@
 package com.createcolonylogistics.client;
 
 import com.createcolonylogistics.CreateColonyLogistics;
+import com.createcolonylogistics.clipboard.DomumOrnamentumRequestInspector;
 import com.createcolonylogistics.clipboard.SmartClipboardReport;
 import com.createcolonylogistics.clipboard.SmartClipboardScrollStorage.ScrollLinkSnapshot;
 import com.createcolonylogistics.network.ServerboundSmartClipboardDebugPacket;
@@ -119,10 +120,10 @@ public class SmartClipboardScreen extends Screen {
         graphics.drawString(font, truncate(activeTab == Tab.REQUESTS
                 ? Component.translatable("screen.create_colony_logistics.smart_clipboard.summary", report.activeRequestCount(), report.buildingCount())
                 : Component.translatable("screen.create_colony_logistics.smart_clipboard.scrolls_summary", nonEmptyScrollCount()), LIST_WIDTH), leftPos + LIST_X, topPos + 39, MUTED, false);
-        graphics.fill(leftPos + LIST_X, topPos + LIST_TOP - 3, leftPos + LIST_X + LIST_WIDTH, topPos + LIST_TOP - 2, SEPARATOR);
 
-        int listTop = topPos + LIST_TOP;
+        int listTop = topPos + LIST_TOP + (activeTab == Tab.SCROLLS ? 5 : 0);
         int listBottom = topPos + LIST_BOTTOM;
+        graphics.fill(leftPos + LIST_X, listTop - 3, leftPos + LIST_X + LIST_WIDTH, listTop - 2, SEPARATOR);
         scroll = Math.min(scroll, maxScroll(listTop, listBottom));
         graphics.enableScissor(leftPos + LIST_X, listTop, leftPos + LIST_X + LIST_WIDTH, listBottom);
         contentHeight = activeTab == Tab.REQUESTS
@@ -142,7 +143,8 @@ public class SmartClipboardScreen extends Screen {
         for (Renderable renderable : renderables) {
             renderable.render(graphics, mouseX, mouseY, partialTick);
         }
-        if (activeTab == Tab.SCROLLS && renderHoveredScrollTooltip(graphics, mouseX, mouseY)) {
+        if (activeTab == Tab.SCROLLS && (renderHoveredScrollTooltip(graphics, mouseX, mouseY, listTop)
+                || renderHoveredScrollResourceTooltip(graphics, mouseX, mouseY, listTop))) {
             return;
         }
         if (activeTab == Tab.REQUESTS && !renderHoveredItemTooltip(graphics, mouseX, mouseY, listTop)) {
@@ -251,9 +253,8 @@ public class SmartClipboardScreen extends Screen {
 
         ItemStack selected = selectedScroll >= 0 && selectedScroll < scrolls.size() ? scrolls.get(selectedScroll) : ItemStack.EMPTY;
         if (selected.isEmpty()) {
-            graphics.drawString(font, truncate(Component.translatable("screen.create_colony_logistics.smart_clipboard.scroll_empty"), LIST_WIDTH), x, y, MUTED, false);
-            graphics.drawString(font, truncate(Component.translatable("screen.create_colony_logistics.smart_clipboard.scroll_insert_hint"), LIST_WIDTH), x, y + 12, DIM, false);
-            return y + 34 - (listTop - scroll);
+            graphics.drawString(font, truncate(Component.literal("No Resource Scroll selected."), LIST_WIDTH), x, y, MUTED, false);
+            return y + 14 - (listTop - scroll);
         }
 
         graphics.renderItem(selected, x, y);
@@ -781,9 +782,9 @@ public class SmartClipboardScreen extends Screen {
         ));
     }
 
-    private boolean renderHoveredScrollTooltip(GuiGraphics graphics, int mouseX, int mouseY) {
+    private boolean renderHoveredScrollTooltip(GuiGraphics graphics, int mouseX, int mouseY, int listTop) {
         int x = leftPos + LIST_X;
-        int y = topPos + LIST_TOP - scroll + 13;
+        int y = listTop - scroll + 13;
         for (int i = 0; i < 9; i++) {
             int slotX = x + (i % 9) * SCROLL_SLOT_SIZE;
             int slotY = y;
@@ -798,6 +799,60 @@ public class SmartClipboardScreen extends Screen {
             }
         }
         return false;
+    }
+
+    private boolean renderHoveredScrollResourceTooltip(GuiGraphics graphics, int mouseX, int mouseY, int listTop) {
+        List<ItemStack> scrolls = report.resourceScrolls();
+        ItemStack selected = selectedScroll >= 0 && selectedScroll < scrolls.size() ? scrolls.get(selectedScroll) : ItemStack.EMPTY;
+        if (selected.isEmpty()) {
+            return false;
+        }
+        ResourceScrollContent content = buildClientResourceScrollRows(selected);
+        if (!content.error().isBlank() || content.resources().isEmpty()) {
+            return false;
+        }
+
+        int x = leftPos + LIST_X;
+        int y = listTop - scroll + 13 + 28;
+        y += 24;
+        y += LINE_HEIGHT;
+        if (!content.projectTitle().isBlank()) {
+            y += LINE_HEIGHT;
+        }
+        y += LINE_HEIGHT + 3;
+
+        for (ResourceLine resource : content.resources()) {
+            if (mouseX >= x && mouseX < x + 16 && mouseY >= y && mouseY < y + 16) {
+                ItemStack stack = resource.stack();
+                if (DomumOrnamentumRequestInspector.isDomumOrnamentumStack(stack)) {
+                    SmartClipboardReport.Entry smartInfoEntry = smartInfoEntryForStack(stack);
+                    if (smartInfoEntry != null) {
+                        graphics.renderComponentTooltip(font, buildApprovedSmartInfoTooltip(smartInfoEntry, stack), mouseX, mouseY, stack);
+                    } else {
+                        graphics.renderTooltip(font, stack, mouseX, mouseY);
+                    }
+                } else {
+                    graphics.renderTooltip(font, stack, mouseX, mouseY);
+                }
+                return true;
+            }
+            y += 34;
+        }
+        return false;
+    }
+
+    private SmartClipboardReport.Entry smartInfoEntryForStack(ItemStack stack) {
+        for (SmartClipboardReport.Entry entry : report.entries()) {
+            if (isDomumOrnamentumEntry(entry) && ItemStack.isSameItemSameComponents(entry.requestedStack(), stack)) {
+                return entry;
+            }
+        }
+        for (SmartClipboardReport.Entry entry : report.entries()) {
+            if (isDomumOrnamentumEntry(entry) && entry.requestedStack().is(stack.getItem())) {
+                return entry;
+            }
+        }
+        return null;
     }
 
     private String expandableReason(SmartClipboardReport.Entry entry) {
@@ -1322,7 +1377,7 @@ public class SmartClipboardScreen extends Screen {
                     }
                 }
                 return new ResourceScrollContent(
-                        builder.getBuildingDisplayName(),
+                        builderTitle(builder),
                         project,
                         suppliedPercent,
                         module.getProgress(),
@@ -1346,6 +1401,14 @@ public class SmartClipboardScreen extends Screen {
                 return new ResolvedScrollBuilding(building, "client-selected-stack -> BuildingId.readBuildingViewFromItemStack");
             }
             return new ResolvedScrollBuilding(null, "client-selected-stack -> BuildingId.readBuildingViewFromItemStack unresolved");
+        }
+
+        private static String builderTitle(BuildingBuilder.View builder) {
+            String worker = builder.getWorkerName();
+            if (worker != null && !worker.isBlank()) {
+                return "Builder's Hut: " + worker.strip();
+            }
+            return "Builder's Hut";
         }
 
         private static void applyPlayerAndDeliveryAmounts(BuildingBuilderResource resource, BuildingBuilder.View builder, List<Delivery> deliveries) {
