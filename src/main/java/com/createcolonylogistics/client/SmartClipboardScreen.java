@@ -7,6 +7,7 @@ import com.createcolonylogistics.network.ServerboundSmartClipboardDebugPacket;
 import com.createcolonylogistics.network.ServerboundSmartClipboardScrollPacket;
 import com.createcolonylogistics.network.ServerboundSmartScrollDebugPacket;
 import com.minecolonies.api.colony.IColonyManager;
+import com.minecolonies.api.colony.IColonyView;
 import com.minecolonies.api.colony.buildings.views.IBuildingView;
 import com.minecolonies.api.colony.requestsystem.request.IRequest;
 import com.minecolonies.api.colony.requestsystem.requestable.deliveryman.Delivery;
@@ -1235,13 +1236,59 @@ public class SmartClipboardScreen extends Screen {
             }
             ColonyId colonyId = ColonyId.readFromItemStack(scroll);
             BuildingId buildingId = BuildingId.readFromItemStack(scroll);
-            if (colonyId.hasColonyId() && buildingId.hasId()) {
-                IBuildingView direct = IColonyManager.getInstance().getBuildingView(colonyId.dimension(), buildingId.id());
-                if (direct != null) {
-                    return new ResolvedScrollBuilding(direct, "IColonyManager.getBuildingView");
+            if (!buildingId.hasId()) {
+                return new ResolvedScrollBuilding(null, "unresolved:no-building-id");
+            }
+
+            IColonyManager colonyManager = IColonyManager.getInstance();
+            if (colonyId.hasColonyId()) {
+                IColonyView linkedColony = colonyManager.getColonyView(colonyId.id(), colonyId.dimension());
+                building = buildingFromColony(linkedColony, buildingId);
+                if (building != null) {
+                    return new ResolvedScrollBuilding(building, "IColonyManager.getColonyView(component).getBuilding");
+                }
+
+                building = colonyManager.getBuildingView(colonyId.dimension(), buildingId.id());
+                if (building != null) {
+                    return new ResolvedScrollBuilding(building, "IColonyManager.getBuildingView(component-dimension)");
+                }
+            }
+
+            Minecraft minecraft = Minecraft.getInstance();
+            if (minecraft.level != null) {
+                building = colonyManager.getBuildingView(minecraft.level.dimension(), buildingId.id());
+                if (building != null) {
+                    return new ResolvedScrollBuilding(building, "IColonyManager.getBuildingView(client-dimension)");
+                }
+
+                IColonyView colonyAtBuilding = colonyManager.getColonyView(minecraft.level, buildingId.id());
+                building = buildingFromColony(colonyAtBuilding, buildingId);
+                if (building != null) {
+                    return new ResolvedScrollBuilding(building, "IColonyManager.getColonyView(client-level, building-pos).getBuilding");
+                }
+
+                IColonyView closestToBuilding = colonyManager.getClosestColonyView(minecraft.level, buildingId.id());
+                building = buildingFromColony(closestToBuilding, buildingId);
+                if (building != null) {
+                    return new ResolvedScrollBuilding(building, "IColonyManager.getClosestColonyView(building-pos).getBuilding");
+                }
+
+                if (minecraft.player != null) {
+                    IColonyView closestToPlayer = colonyManager.getClosestColonyView(minecraft.level, minecraft.player.blockPosition());
+                    building = buildingFromColony(closestToPlayer, buildingId);
+                    if (building != null) {
+                        return new ResolvedScrollBuilding(building, "IColonyManager.getClosestColonyView(player-pos).getBuilding");
+                    }
                 }
             }
             return new ResolvedScrollBuilding(null, "unresolved");
+        }
+
+        private static IBuildingView buildingFromColony(IColonyView colony, BuildingId buildingId) {
+            if (colony == null || !buildingId.hasId()) {
+                return null;
+            }
+            return colony.getBuilding(buildingId.id());
         }
 
         private static void applyPlayerAndDeliveryAmounts(BuildingBuilderResource resource, BuildingBuilder.View builder, List<Delivery> deliveries) {
