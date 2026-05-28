@@ -1,17 +1,28 @@
 package com.createcolonylogistics.clipboard;
 
+import com.minecolonies.api.crafting.GenericRecipe;
+import com.minecolonies.api.crafting.IGenericRecipe;
 import net.minecraft.core.HolderLookup;
 import net.minecraft.core.registries.BuiltInRegistries;
 import net.minecraft.resources.ResourceLocation;
+import net.minecraft.world.SimpleContainer;
 import net.minecraft.world.item.Item;
 import net.minecraft.world.item.ItemStack;
 import net.minecraft.world.item.crafting.Ingredient;
+import net.minecraft.world.item.crafting.RecipeInput;
 import net.minecraft.world.item.crafting.RecipeHolder;
 import net.minecraft.world.item.crafting.RecipeManager;
+import net.minecraft.world.item.crafting.RecipeType;
+import net.minecraft.world.level.Level;
+import net.minecraft.world.level.block.Blocks;
 import net.minecraft.world.level.block.Block;
 import com.minecolonies.api.colony.requestsystem.request.IRequest;
 
+import java.lang.reflect.Constructor;
+import java.lang.reflect.Field;
+import java.lang.reflect.Method;
 import java.util.ArrayList;
+import java.util.Collection;
 import java.util.LinkedHashSet;
 import java.util.LinkedHashMap;
 import java.util.List;
@@ -61,6 +72,93 @@ public final class DomumOrnamentumRequestInspector {
 
     public static Optional<ResourceLocation> findExactCutterRecipe(RecipeManager recipeManager, HolderLookup.Provider provider, ItemStack requestedStack) {
         return findExactCutterRecipeHolder(recipeManager, provider, requestedStack).map(RecipeHolder::id);
+    }
+
+    public static Optional<CutterRecipeMatch> findArchitectsCutterMatch(Level level, ItemStack requestedStack) {
+        if (level == null || requestedStack.isEmpty() || !isDomumOrnamentumStack(requestedStack)) {
+            return Optional.empty();
+        }
+
+        try {
+            Object texturedBlock = domumBlock(requestedStack);
+            if (texturedBlock == null) {
+                return Optional.empty();
+            }
+
+            Object textureData = materialTextureData(requestedStack);
+            if (textureData == null || materialTextureDataIsEmpty(textureData)) {
+                return Optional.empty();
+            }
+
+            Collection<?> components = texturedBlockComponents(texturedBlock);
+            if (components.isEmpty()) {
+                return Optional.empty();
+            }
+
+            Map<?, ?> texturedComponents = texturedComponents(textureData);
+            SimpleContainer inputInventory = new SimpleContainer(maxTexturableComponentCount(components.size()));
+            List<ItemStack> materialStacks = new ArrayList<>();
+            int slot = 0;
+            for (Object component : components) {
+                Object componentId = componentId(component);
+                Object material = texturedComponents.get(componentId);
+                if (material == null) {
+                    material = Blocks.AIR;
+                }
+                if (!(material instanceof Block materialBlock)) {
+                    return Optional.empty();
+                }
+                ItemStack materialStack = new ItemStack(materialBlock);
+                if (materialStack.isEmpty()) {
+                    return Optional.empty();
+                }
+                inputInventory.setItem(slot++, materialStack.copyWithCount(1));
+                materialStacks.add(materialStack.copyWithCount(1));
+            }
+
+            Object inputObject = architectsCutterRecipeInput(inputInventory);
+            if (!(inputObject instanceof RecipeInput recipeInput)) {
+                return Optional.empty();
+            }
+
+            RecipeType<?> recipeType = architectsCutterRecipeType();
+            @SuppressWarnings({"rawtypes", "unchecked"})
+            List<RecipeHolder<?>> recipes = (List) level.getRecipeManager().getRecipesFor((RecipeType) recipeType, recipeInput, level);
+            List<AssembledCutterRecipe> matches = new ArrayList<>();
+            for (RecipeHolder<?> recipe : recipes) {
+                ItemStack assembled = assembleCutterRecipe(recipe.value(), inputObject, level.registryAccess()).copy();
+                Object assembledBlock = domumBlock(assembled);
+                if (assembledBlock == null || texturedBlockComponents(assembledBlock).size() != materialStacks.size()) {
+                    continue;
+                }
+                if (ItemStack.isSameItemSameComponents(assembled, requestedStack)) {
+                    matches.add(new AssembledCutterRecipe(recipe, assembled));
+                }
+            }
+            if (matches.isEmpty()) {
+                return Optional.empty();
+            }
+
+            AssembledCutterRecipe primary = matches.getFirst();
+            List<ItemStack> alternateOutputs = matches.stream()
+                    .skip(1)
+                    .map(match -> match.output().copy())
+                    .toList();
+            List<List<ItemStack>> inputs = materialStacks.stream()
+                    .map(stack -> List.of(stack.copyWithCount(1)))
+                    .toList();
+            IGenericRecipe genericRecipe = GenericRecipe.builder()
+                    .withRecipeId(primary.recipe().id())
+                    .withOutputs(primary.output().copy(), alternateOutputs)
+                    .withInputs(inputs)
+                    .withGridSize(3)
+                    .build();
+            return Optional.of(new CutterRecipeMatch(primary.recipe().id(), genericRecipe, primary.output().copy(), List.copyOf(materialStacks)));
+        } catch (RuntimeException ignored) {
+            return Optional.empty();
+        } catch (LinkageError | ReflectiveOperationException ignored) {
+            return Optional.empty();
+        }
     }
 
     public static List<IngredientRequirement> findCutterRequirements(RecipeManager recipeManager, HolderLookup.Provider provider, ItemStack requestedStack) {
@@ -144,6 +242,72 @@ public final class DomumOrnamentumRequestInspector {
                 + " generated=" + generated
                 + " materialGeneration=" + generationSummary
                 + " components=" + compactComponentSummary(requestedStack);
+    }
+
+    private static Object domumBlock(ItemStack stack) throws ReflectiveOperationException {
+        Class<?> util = Class.forName("com.minecolonies.core.util.DomumOrnamentumUtils");
+        return util.getMethod("getBlock", ItemStack.class).invoke(null, stack);
+    }
+
+    private static Object materialTextureData(ItemStack stack) throws ReflectiveOperationException {
+        Class<?> textureData = Class.forName("com.ldtteam.domumornamentum.client.model.data.MaterialTextureData");
+        return textureData.getMethod("readFromItemStack", ItemStack.class).invoke(null, stack);
+    }
+
+    private static boolean materialTextureDataIsEmpty(Object textureData) throws ReflectiveOperationException {
+        return (boolean) textureData.getClass().getMethod("isEmpty").invoke(textureData);
+    }
+
+    private static Map<?, ?> texturedComponents(Object textureData) throws ReflectiveOperationException {
+        Object result = textureData.getClass().getMethod("getTexturedComponents").invoke(textureData);
+        return result instanceof Map<?, ?> map ? map : Map.of();
+    }
+
+    private static Collection<?> texturedBlockComponents(Object texturedBlock) throws ReflectiveOperationException {
+        Class<?> blockInterface = Class.forName("com.ldtteam.domumornamentum.block.IMateriallyTexturedBlock");
+        Object result = blockInterface.getMethod("getComponents").invoke(texturedBlock);
+        return result instanceof Collection<?> collection ? collection : List.of();
+    }
+
+    private static Object componentId(Object component) throws ReflectiveOperationException {
+        Class<?> componentInterface = Class.forName("com.ldtteam.domumornamentum.block.IMateriallyTexturedBlockComponent");
+        return componentInterface.getMethod("getId").invoke(component);
+    }
+
+    private static int maxTexturableComponentCount(int fallback) {
+        try {
+            Class<?> manager = Class.forName("com.ldtteam.domumornamentum.block.MateriallyTexturedBlockManager");
+            Object instance = manager.getMethod("getInstance").invoke(null);
+            return (int) manager.getMethod("getMaxTexturableComponentCount").invoke(instance);
+        } catch (LinkageError | ReflectiveOperationException | RuntimeException ignored) {
+            return Math.max(1, fallback);
+        }
+    }
+
+    private static Object architectsCutterRecipeInput(SimpleContainer inputInventory) throws ReflectiveOperationException {
+        Class<?> inputClass = Class.forName("com.ldtteam.domumornamentum.recipe.architectscutter.ArchitectsCutterRecipeInput");
+        Constructor<?> constructor = inputClass.getConstructor(net.minecraft.world.Container.class);
+        return constructor.newInstance(inputInventory);
+    }
+
+    private static RecipeType<?> architectsCutterRecipeType() throws ReflectiveOperationException {
+        Class<?> recipeTypes = Class.forName("com.ldtteam.domumornamentum.recipe.ModRecipeTypes");
+        Field field = recipeTypes.getField("ARCHITECTS_CUTTER");
+        Object holder = field.get(null);
+        return (RecipeType<?>) holder.getClass().getMethod("get").invoke(holder);
+    }
+
+    private static ItemStack assembleCutterRecipe(Object recipe, Object input, HolderLookup.Provider provider) throws ReflectiveOperationException {
+        for (Method method : recipe.getClass().getMethods()) {
+            if (!method.getName().equals("assemble") || method.getParameterCount() != 2) {
+                continue;
+            }
+            Object result = method.invoke(recipe, input, provider);
+            if (result instanceof ItemStack stack) {
+                return stack;
+            }
+        }
+        return ItemStack.EMPTY;
     }
 
     private static Optional<RecipeHolder<?>> findCutterRecipeHolder(RecipeManager recipeManager, HolderLookup.Provider provider, ItemStack requestedStack) {
@@ -295,6 +459,12 @@ public final class DomumOrnamentumRequestInspector {
     }
 
     public record IngredientRequirement(ItemStack stack, int count) {
+    }
+
+    public record CutterRecipeMatch(ResourceLocation recipeId, IGenericRecipe genericRecipe, ItemStack assembledOutput, List<ItemStack> materialStacks) {
+    }
+
+    private record AssembledCutterRecipe(RecipeHolder<?> recipe, ItemStack output) {
     }
 
     private record MaterialCandidate(String rawToken, ResourceLocation id, Optional<ItemStack> stack, String resolution, String skipReason) {

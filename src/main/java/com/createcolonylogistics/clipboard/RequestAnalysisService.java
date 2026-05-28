@@ -639,7 +639,7 @@ public final class RequestAnalysisService {
                 ? ColonyProductionInspector.inspect(colony, level, requestedStack)
                 : new ColonyProductionInspector.ProductionKnowledge(Collections.emptyList(), Collections.emptyList());
         Optional<ResourceLocation> cutterRecipe = domumRequest
-                ? DomumOrnamentumRequestInspector.findExactCutterRecipe(level.getRecipeManager(), level.registryAccess(), requestedStack)
+                ? DomumOrnamentumRequestInspector.findArchitectsCutterMatch(level, requestedStack).map(DomumOrnamentumRequestInspector.CutterRecipeMatch::recipeId)
                 : Optional.empty();
         // Pipeline priority: keep MineColonies' own request graph authoritative.
         // Synthetic Domum Ornamentum cutter inputs are only supplemental when the

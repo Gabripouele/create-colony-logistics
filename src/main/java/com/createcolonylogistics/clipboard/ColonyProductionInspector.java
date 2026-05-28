@@ -6,13 +6,11 @@ import com.minecolonies.api.colony.buildings.modules.ICraftingBuildingModule;
 import com.minecolonies.api.crafting.IGenericRecipe;
 import com.minecolonies.api.crafting.IRecipeStorage;
 import com.minecolonies.api.crafting.ModCraftingTypes;
-import net.minecraft.resources.ResourceLocation;
 import net.minecraft.world.item.ItemStack;
 import net.minecraft.world.level.Level;
 
 import java.util.ArrayList;
 import java.util.List;
-import java.util.Optional;
 
 public final class ColonyProductionInspector {
     private ColonyProductionInspector() {
@@ -21,7 +19,9 @@ public final class ColonyProductionInspector {
     public static ProductionKnowledge inspect(IColony colony, Level level, ItemStack requestedStack) {
         List<String> knownBy = new ArrayList<>();
         List<String> canLearn = new ArrayList<>();
-        List<IGenericRecipe> exactRecipes = exactArchitectsCutterRecipes(level, requestedStack);
+        List<IGenericRecipe> exactRecipes = DomumOrnamentumRequestInspector.findArchitectsCutterMatch(level, requestedStack)
+                .map(match -> List.of(match.genericRecipe()))
+                .orElseGet(List::of);
 
         for (IBuilding building : colony.getBuildingManager().getBuildings().values()) {
             for (ICraftingBuildingModule module : building.getModulesByType(ICraftingBuildingModule.class)) {
@@ -39,41 +39,6 @@ public final class ColonyProductionInspector {
         }
 
         return new ProductionKnowledge(knownBy, canLearn);
-    }
-
-    private static List<IGenericRecipe> exactArchitectsCutterRecipes(Level level, ItemStack requestedStack) {
-        Optional<ResourceLocation> cutterRecipeId = DomumOrnamentumRequestInspector.findExactCutterRecipe(
-                level.getRecipeManager(),
-                level.registryAccess(),
-                requestedStack
-        );
-        if (cutterRecipeId.isEmpty()) {
-            return List.of();
-        }
-
-        try {
-            return ModCraftingTypes.ARCHITECTS_CUTTER.get().findRecipes(level.getRecipeManager(), level).stream()
-                    .filter(recipe -> cutterRecipeId.get().equals(recipe.getRecipeId()) || recipeOutputMatches(recipe, requestedStack))
-                    .toList();
-        } catch (RuntimeException ignored) {
-            return List.of();
-        }
-    }
-
-    private static boolean recipeOutputMatches(IGenericRecipe recipe, ItemStack requestedStack) {
-        try {
-            if (ItemStack.isSameItemSameComponents(recipe.getPrimaryOutput(), requestedStack)) {
-                return true;
-            }
-            for (ItemStack output : recipe.getAllMultiOutputs()) {
-                if (ItemStack.isSameItemSameComponents(output, requestedStack)) {
-                    return true;
-                }
-            }
-        } catch (RuntimeException ignored) {
-            return false;
-        }
-        return false;
     }
 
     private static boolean supportsArchitectsCutter(ICraftingBuildingModule module) {
