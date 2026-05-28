@@ -402,7 +402,15 @@ public class SmartClipboardScreen extends Screen {
 
         int listTop = topPos + LIST_TOP;
         if (activeTab == Tab.SCROLLS) {
+            if (Screen.hasShiftDown() && scrollDebugHit(mouseX, mouseY)) {
+                dumpSelectedScrollDebug();
+                return true;
+            }
             return handleScrollClick(mouseX, mouseY, button);
+        }
+        if (Screen.hasShiftDown() && scrollDebugHit(mouseX, mouseY)) {
+            CreateColonyLogistics.LOGGER.info("[SmartScrollDebug] ignored: not Scrolls tab activeTab={}", activeTab);
+            showScrollDebugMessage("Smart Scroll debug ignored: not Scrolls tab");
         }
 
         if (mouseX >= importantButtonX() && mouseX < importantButtonX() + IMPORTANT_BUTTON_SIZE
@@ -438,6 +446,13 @@ public class SmartClipboardScreen extends Screen {
         return super.mouseClicked(mouseX, mouseY, button);
     }
 
+    private boolean scrollDebugHit(double mouseX, double mouseY) {
+        return mouseX >= leftPos + LIST_X
+                && mouseX < leftPos + LIST_X + LIST_WIDTH
+                && mouseY >= topPos + LIST_TOP
+                && mouseY < topPos + LIST_BOTTOM;
+    }
+
     private boolean handleTabClick(double mouseX, double mouseY) {
         if (tabHit(mouseX, mouseY, leftPos + 42, topPos - TAB_HEIGHT + 4)) {
             activeTab = Tab.REQUESTS;
@@ -466,10 +481,6 @@ public class SmartClipboardScreen extends Screen {
             int slotY = y;
             if (mouseX >= slotX && mouseX < slotX + 18 && mouseY >= slotY && mouseY < slotY + 18) {
                 ItemStack stack = i < report.resourceScrolls().size() ? report.resourceScrolls().get(i) : ItemStack.EMPTY;
-                if (Screen.hasShiftDown() && i == selectedScroll && !stack.isEmpty()) {
-                    dumpSelectedScrollDebug(i, stack);
-                    return true;
-                }
                 if (stack.isEmpty()) {
                     activeTab = Tab.SCROLLS;
                     selectedScroll = i;
@@ -495,21 +506,20 @@ public class SmartClipboardScreen extends Screen {
                 return true;
             }
         }
-        if (Screen.hasShiftDown() && selectedScrollContentHit(mouseX, mouseY)) {
-            List<ItemStack> scrolls = report.resourceScrolls();
-            ItemStack selected = selectedScroll >= 0 && selectedScroll < scrolls.size() ? scrolls.get(selectedScroll) : ItemStack.EMPTY;
-            if (!selected.isEmpty()) {
-                dumpSelectedScrollDebug(selectedScroll, selected);
-                return true;
-            }
-        }
         return false;
     }
 
-    private boolean selectedScrollContentHit(double mouseX, double mouseY) {
-        int x = leftPos + LIST_X;
-        int y = topPos + LIST_TOP - scroll + 65;
-        return mouseX >= x && mouseX < x + LIST_WIDTH && mouseY >= y && mouseY < topPos + LIST_BOTTOM;
+    private void dumpSelectedScrollDebug() {
+        List<ItemStack> scrolls = report.resourceScrolls();
+        ItemStack selected = selectedScroll >= 0 && selectedScroll < scrolls.size() ? scrolls.get(selectedScroll) : ItemStack.EMPTY;
+        if (selected.isEmpty()) {
+            CreateColonyLogistics.LOGGER.info("[SmartScrollDebug] no selected scroll activeTab={} selectedIndex={} storedScrolls={}",
+                    activeTab, selectedScroll, scrolls.size());
+            showScrollDebugMessage("Smart Scroll debug: no selected scroll");
+            return;
+        }
+        dumpSelectedScrollDebug(selectedScroll, selected);
+        showScrollDebugMessage("Smart Scroll debug dumped for slot " + selectedScroll);
     }
 
     private void dumpSelectedScrollDebug(int slot, ItemStack scrollStack) {
@@ -544,6 +554,13 @@ public class SmartClipboardScreen extends Screen {
             CreateColonyLogistics.LOGGER.info("[SmartScrollDebug] Row[{}]: name='{}' item={} missing={} available={} required={} deliveryOrWarehouse={} color={}",
                     i, line.name(), BuiltInRegistries.ITEM.getKey(line.stack().getItem()), line.missing(), line.available(),
                     line.required(), line.deliveryOrWarehouseAmount(), line.statusColor());
+        }
+    }
+
+    private void showScrollDebugMessage(String message) {
+        Minecraft minecraft = Minecraft.getInstance();
+        if (minecraft.player != null) {
+            minecraft.player.displayClientMessage(Component.literal(message), false);
         }
     }
 
