@@ -46,7 +46,7 @@ import java.util.Map;
 import java.util.Set;
 
 public class SmartClipboardScreen extends Screen {
-    private static final ResourceLocation STOCK_KEEPER_TEXTURE = ResourceLocation.fromNamespaceAndPath("create", "textures/gui/stock_keeper.png");
+    private static final ResourceLocation STOCK_KEEPER_TEXTURE = ResourceLocation.fromNamespaceAndPath(CreateColonyLogistics.MOD_ID, "textures/gui/smart_clipboard_gui.png");
     private static final ResourceLocation RESOURCE_SCROLL_ID = ResourceLocation.fromNamespaceAndPath("minecolonies", "resourcescroll");
     private static final int IMAGE_WIDTH = 256;
     private static final int IMAGE_HEIGHT = 316;
