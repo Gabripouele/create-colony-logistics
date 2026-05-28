@@ -5,6 +5,7 @@ import com.createcolonylogistics.clipboard.SmartClipboardReport;
 import com.createcolonylogistics.network.ServerboundSmartClipboardDebugPacket;
 import com.createcolonylogistics.network.ServerboundSmartClipboardScrollPacket;
 import com.createcolonylogistics.network.ServerboundSmartScrollDebugPacket;
+import com.minecolonies.api.colony.IColonyManager;
 import com.minecolonies.api.colony.buildings.views.IBuildingView;
 import com.minecolonies.api.colony.requestsystem.request.IRequest;
 import com.minecolonies.api.colony.requestsystem.requestable.deliveryman.Delivery;
@@ -546,7 +547,8 @@ public class SmartClipboardScreen extends Screen {
         ColonyId colonyId = ColonyId.readFromItemStack(scrollStack);
         BuildingId buildingId = BuildingId.readFromItemStack(scrollStack);
         WarehouseSnapshot warehouseSnapshot = WarehouseSnapshot.readFromItemStack(scrollStack);
-        IBuildingView building = BuildingId.readBuildingViewFromItemStack(scrollStack);
+        ResolvedScrollBuilding resolved = ResourceScrollContent.resolveBuilderView(scrollStack);
+        IBuildingView building = resolved.building();
         BuildingResourcesModuleView module = building instanceof BuildingBuilder.View builder
                 ? builder.getModuleViewByType(BuildingResourcesModuleView.class)
                 : null;
@@ -558,11 +560,12 @@ public class SmartClipboardScreen extends Screen {
         CreateColonyLogistics.LOGGER.info("[SmartScrollDebug] Components: hasColonyId={} colonyId={} dimension={} hasBuildingId={} buildingPos={} hasWarehouseSnapshot={} warehouseEntries={}",
                 colonyId.hasColonyId(), colonyId.id(), colonyId.dimension().location(), buildingId.hasId(), buildingId.id(),
                 !warehouseSnapshot.hash().isEmpty() || !warehouseSnapshot.snapshot().isEmpty(), warehouseSnapshot.snapshot().size());
-        CreateColonyLogistics.LOGGER.info("[SmartScrollDebug] Resolution: buildingView={} class={} isBuilderView={} colonyView={} module={} workOrderId={} progress={}",
-                building != null, building == null ? "none" : building.getClass().getName(), building instanceof BuildingBuilder.View,
+        CreateColonyLogistics.LOGGER.info("[SmartScrollDebug] Resolution: source={} buildingView={} class={} isBuilderView={} colonyView={} module={} workOrderId={} progress={}",
+                resolved.source(), building != null, building == null ? "none" : building.getClass().getName(), building instanceof BuildingBuilder.View,
                 building != null && building.getColony() != null, module != null, module == null ? "n/a" : module.getWorkOrderId(),
                 module == null ? "n/a" : module.getProgress());
-        CreateColonyLogistics.LOGGER.info("[SmartScrollDebug] Adapter: entered=true moduleResources={} adaptedResources={} inventoryOverlay={} deliveryOverlay={} warehouseOverlay={} finalRows={} error='{}'",
+        CreateColonyLogistics.LOGGER.info("[SmartScrollDebug] Adapter: entered=true resolutionSource={} moduleResources={} adaptedResources={} inventoryOverlay={} deliveryOverlay={} warehouseOverlay={} finalRows={} error='{}'",
+                content.resolutionSource(),
                 content.moduleResourceCount(), content.adaptedResourceCount(), content.inventoryOverlayCount(),
                 content.deliveryOverlayCount(), content.warehouseOverlayCount(), content.resources().size(), content.error());
         CreateColonyLogistics.LOGGER.info("[SmartScrollDebug] RenderPath: method=renderSelectedResourceScrollContent oldTooltipSummary=false newAdapterList={} invalidMessage={} bounds={}x{}+{},{}",
@@ -1143,18 +1146,19 @@ public class SmartClipboardScreen extends Screen {
             int adaptedResourceCount,
             int inventoryOverlayCount,
             int deliveryOverlayCount,
-            int warehouseOverlayCount
+            int warehouseOverlayCount,
+            String resolutionSource
     ) {
         static ResourceScrollContent from(ItemStack scroll) {
             try {
                 if (!ColonyId.readFromItemStack(scroll).hasColonyId() || !BuildingId.readFromItemStack(scroll).hasId()) {
                     return error("Resource Scroll is not linked.");
                 }
-                IBuildingView building = BuildingId.readBuildingViewFromItemStack(scroll);
-                if (building == null) {
+                ResolvedScrollBuilding resolved = resolveBuilderView(scroll);
+                if (resolved.building() == null) {
                     return error("Linked building is not available.");
                 }
-                if (!(building instanceof BuildingBuilder.View builder)) {
+                if (!(resolved.building() instanceof BuildingBuilder.View builder)) {
                     return error("Linked building is not a Builder Hut.");
                 }
                 BuildingResourcesModuleView module = builder.getModuleViewByType(BuildingResourcesModuleView.class);
@@ -1209,11 +1213,28 @@ public class SmartClipboardScreen extends Screen {
                         adapted.size(),
                         inventoryOverlayCount,
                         deliveryOverlayCount,
-                        Math.max(0, warehouseOverlayCount)
+                        Math.max(0, warehouseOverlayCount),
+                        resolved.source()
                 );
             } catch (RuntimeException ignored) {
                 return error("Resource Scroll data is unavailable.");
             }
+        }
+
+        private static ResolvedScrollBuilding resolveBuilderView(ItemStack scroll) {
+            IBuildingView building = BuildingId.readBuildingViewFromItemStack(scroll);
+            if (building != null) {
+                return new ResolvedScrollBuilding(building, "BuildingId.readBuildingViewFromItemStack");
+            }
+            ColonyId colonyId = ColonyId.readFromItemStack(scroll);
+            BuildingId buildingId = BuildingId.readFromItemStack(scroll);
+            if (colonyId.hasColonyId() && buildingId.hasId()) {
+                IBuildingView direct = IColonyManager.getInstance().getBuildingView(colonyId.dimension(), buildingId.id());
+                if (direct != null) {
+                    return new ResolvedScrollBuilding(direct, "IColonyManager.getBuildingView");
+                }
+            }
+            return new ResolvedScrollBuilding(null, "unresolved");
         }
 
         private static void applyPlayerAndDeliveryAmounts(BuildingBuilderResource resource, BuildingBuilder.View builder, List<Delivery> deliveries) {
@@ -1260,8 +1281,11 @@ public class SmartClipboardScreen extends Screen {
         }
 
         private static ResourceScrollContent error(String message) {
-            return new ResourceScrollContent("", "", 0, 0, List.of(), message, 0, 0, 0, 0, 0);
+            return new ResourceScrollContent("", "", 0, 0, List.of(), message, 0, 0, 0, 0, 0, "unresolved");
         }
+    }
+
+    private record ResolvedScrollBuilding(IBuildingView building, String source) {
     }
 
     private record ResourceLine(ItemStack stack, String name, int missing, int available, int required, int deliveryOrWarehouseAmount, int statusColor) {
