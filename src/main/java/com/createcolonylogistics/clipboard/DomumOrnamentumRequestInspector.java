@@ -32,6 +32,7 @@ import java.util.List;
 import java.util.Map;
 import java.util.Optional;
 import java.util.Set;
+import java.util.Comparator;
 import java.util.regex.Matcher;
 import java.util.regex.Pattern;
 
@@ -142,11 +143,10 @@ public final class DomumOrnamentumRequestInspector {
                 return Optional.empty();
             }
 
+            matches.sort(Comparator
+                    .comparingInt((AssembledCutterRecipe match) -> cutterInputComplexity(materialStacks))
+                    .thenComparing(match -> match.recipe().id().toString()));
             AssembledCutterRecipe primary = matches.getFirst();
-            List<ItemStack> alternateOutputs = matches.stream()
-                    .skip(1)
-                    .map(match -> match.output().copy())
-                    .toList();
             List<List<ItemStack>> inputs = materialStacks.stream()
                     .map(stack -> List.of(stack.copyWithCount(1)))
                     .toList();
@@ -155,14 +155,14 @@ public final class DomumOrnamentumRequestInspector {
                     .toList();
             IGenericRecipe genericRecipe = GenericRecipe.builder()
                     .withRecipeId(primary.recipe().id())
-                    .withOutputs(primary.output().copy(), alternateOutputs)
+                    .withOutput(primary.output().copy())
                     .withInputs(inputs)
                     .withGridSize(3)
                     .build();
             RecipeStorage storage = RecipeStorage.builder()
                     .withInputs(storageInputs)
                     .withPrimaryOutput(primary.output().copy())
-                    .withAlternateOutputs(alternateOutputs)
+                    .withAlternateOutputs(List.of())
                     .withGridSize(3)
                     .withRecipeType(ModRecipeTypes.MULTI_OUTPUT_ID)
                     .build();
@@ -172,6 +172,20 @@ public final class DomumOrnamentumRequestInspector {
         } catch (LinkageError | ReflectiveOperationException ignored) {
             return Optional.empty();
         }
+    }
+
+    private static int cutterInputComplexity(List<ItemStack> materialStacks) {
+        int complexity = materialStacks.size() * 10;
+        for (ItemStack stack : materialStacks) {
+            if (isDomumOrnamentumStack(stack)) {
+                complexity += 100;
+            }
+            String path = itemId(stack).getPath();
+            if (path.contains("framed") || path.contains("shingle") || path.contains("pillar") || path.contains("slab") || path.contains("stair")) {
+                complexity += 10;
+            }
+        }
+        return complexity;
     }
 
     public static List<IngredientRequirement> findCutterRequirements(RecipeManager recipeManager, HolderLookup.Provider provider, ItemStack requestedStack) {
