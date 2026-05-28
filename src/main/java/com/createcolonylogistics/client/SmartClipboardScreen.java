@@ -88,7 +88,7 @@ public class SmartClipboardScreen extends Screen {
     private static final int IMPORTANT_TOGGLE_WIDTH = 8;
     private static final int IMPORTANT_TOGGLE_HEIGHT = 9;
     private static final int IMPORTANT_TOGGLE_HITBOX_PADDING = 3;
-    private static final float IMPORTANT_TOGGLE_GREEN_ALPHA = 0.25f;
+    private static final float IMPORTANT_TOGGLE_GREEN_ALPHA = 0.50f;
     private static final int TREE_INDENT = 8;
     private static final int TREE_ROW_HEIGHT = 18;
     private static final int RESOURCE_ROW_HEIGHT = 36;
