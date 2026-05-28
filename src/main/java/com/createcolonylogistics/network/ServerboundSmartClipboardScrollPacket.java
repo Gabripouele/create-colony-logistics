@@ -5,7 +5,11 @@ import com.createcolonylogistics.clipboard.ColonyContextResolver;
 import com.createcolonylogistics.clipboard.RequestAnalysisService;
 import com.createcolonylogistics.clipboard.SmartClipboardReport;
 import com.createcolonylogistics.clipboard.SmartClipboardScrollStorage;
+import com.createcolonylogistics.clipboard.SmartClipboardScrollStorage.ScrollLinkSnapshot;
 import com.minecolonies.api.colony.IColony;
+import com.minecolonies.api.items.component.BuildingId;
+import com.minecolonies.api.items.component.ColonyId;
+import com.minecolonies.api.items.component.WarehouseSnapshot;
 import net.minecraft.network.RegistryFriendlyByteBuf;
 import net.minecraft.network.codec.StreamCodec;
 import net.minecraft.network.protocol.common.custom.CustomPacketPayload;
@@ -17,7 +21,7 @@ import net.neoforged.neoforge.network.handling.IPayloadContext;
 
 import java.util.Optional;
 
-public record ServerboundSmartClipboardScrollPacket(int action, int slot, ItemStack scrollSnapshot) implements CustomPacketPayload {
+public record ServerboundSmartClipboardScrollPacket(int action, int slot, ScrollLinkSnapshot scrollSnapshot) implements CustomPacketPayload {
     public static final int INSERT = 0;
     public static final int REMOVE = 1;
 
@@ -29,13 +33,13 @@ public record ServerboundSmartClipboardScrollPacket(int action, int slot, ItemSt
             StreamCodec.ofMember(ServerboundSmartClipboardScrollPacket::encode, ServerboundSmartClipboardScrollPacket::decode);
 
     private static ServerboundSmartClipboardScrollPacket decode(RegistryFriendlyByteBuf buffer) {
-        return new ServerboundSmartClipboardScrollPacket(buffer.readVarInt(), buffer.readVarInt(), ItemStack.OPTIONAL_STREAM_CODEC.decode(buffer));
+        return new ServerboundSmartClipboardScrollPacket(buffer.readVarInt(), buffer.readVarInt(), readSnapshot(buffer));
     }
 
     private void encode(RegistryFriendlyByteBuf buffer) {
         buffer.writeVarInt(action);
         buffer.writeVarInt(slot);
-        ItemStack.OPTIONAL_STREAM_CODEC.encode(buffer, scrollSnapshot);
+        writeSnapshot(buffer, scrollSnapshot);
     }
 
     public static void handle(ServerboundSmartClipboardScrollPacket packet, IPayloadContext context) {
@@ -69,5 +73,20 @@ public record ServerboundSmartClipboardScrollPacket(int action, int slot, ItemSt
     @Override
     public Type<? extends CustomPacketPayload> type() {
         return TYPE;
+    }
+
+    private static ScrollLinkSnapshot readSnapshot(RegistryFriendlyByteBuf buffer) {
+        return new ScrollLinkSnapshot(
+                ColonyId.STREAM_CODEC.decode(buffer),
+                BuildingId.STREAM_CODEC.decode(buffer),
+                WarehouseSnapshot.STREAM_CODEC.decode(buffer)
+        );
+    }
+
+    private static void writeSnapshot(RegistryFriendlyByteBuf buffer, ScrollLinkSnapshot snapshot) {
+        ScrollLinkSnapshot safe = snapshot == null ? ScrollLinkSnapshot.EMPTY : snapshot;
+        ColonyId.STREAM_CODEC.encode(buffer, safe.colonyId());
+        BuildingId.STREAM_CODEC.encode(buffer, safe.buildingId());
+        WarehouseSnapshot.STREAM_CODEC.encode(buffer, safe.warehouseSnapshot());
     }
 }

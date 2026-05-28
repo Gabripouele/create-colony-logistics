@@ -1,6 +1,9 @@
 package com.createcolonylogistics.clipboard;
 
 import com.createcolonylogistics.item.SmartColonyClipboardItem;
+import com.minecolonies.api.items.component.BuildingId;
+import com.minecolonies.api.items.component.ColonyId;
+import com.minecolonies.api.items.component.WarehouseSnapshot;
 import net.minecraft.core.NonNullList;
 import net.minecraft.core.component.DataComponents;
 import net.minecraft.core.registries.BuiltInRegistries;
@@ -27,7 +30,7 @@ public final class SmartClipboardScrollStorage {
         List<ItemStack> result = new ArrayList<>(SLOT_COUNT);
         for (int i = 0; i < SLOT_COUNT; i++) {
             ItemStack stack = items.get(i);
-            result.add(isResourceScroll(stack) ? stack.copyWithCount(1) : ItemStack.EMPTY);
+            result.add(isResourceScroll(stack) ? sanitizedScrollStack(stack, ScrollLinkSnapshot.from(stack)) : ItemStack.EMPTY);
         }
         return result;
     }
@@ -51,22 +54,21 @@ public final class SmartClipboardScrollStorage {
     }
 
     public static boolean insertFirstResourceScroll(ServerPlayer player, ItemStack clipboard) {
-        return insertResourceScroll(player, clipboard, ItemStack.EMPTY);
+        return insertResourceScroll(player, clipboard, ScrollLinkSnapshot.EMPTY);
     }
 
-    public static boolean insertResourceScroll(ServerPlayer player, ItemStack clipboard, ItemStack scrollSnapshot) {
+    public static boolean insertResourceScroll(ServerPlayer player, ItemStack clipboard, ScrollLinkSnapshot scrollSnapshot) {
         List<ItemStack> scrolls = read(clipboard);
         int target = firstEmptySlot(scrolls);
         if (target < 0) {
             return false;
         }
-        ItemStack storedSnapshot = isResourceScroll(scrollSnapshot) ? scrollSnapshot.copyWithCount(1) : ItemStack.EMPTY;
         for (int i = 0; i < player.getInventory().getContainerSize(); i++) {
             ItemStack stack = player.getInventory().getItem(i);
             if (isResourceScroll(stack)) {
-                // MineColonies' Resource Scroll link data is the authoritative ItemStack state used by its window.
-                // Preserve the client-selected stack snapshot when provided, while still consuming a real server item.
-                ItemStack stored = storedSnapshot.isEmpty() ? stack.copyWithCount(1) : storedSnapshot;
+                // Store only the MineColonies link components needed by the scroll UI. Copying arbitrary client
+                // ItemStack components into player data can introduce components with no network codec.
+                ItemStack stored = sanitizedScrollStack(stack, scrollSnapshot);
                 stack.shrink(1);
                 scrolls.set(target, stored);
                 write(clipboard, scrolls);
@@ -75,6 +77,21 @@ public final class SmartClipboardScrollStorage {
             }
         }
         return false;
+    }
+
+    private static ItemStack sanitizedScrollStack(ItemStack serverStack, ScrollLinkSnapshot snapshot) {
+        ItemStack stored = new ItemStack(serverStack.getItem());
+        ScrollLinkSnapshot effective = snapshot.hasLink() ? snapshot : ScrollLinkSnapshot.from(serverStack);
+        if (effective.colonyId().hasColonyId()) {
+            effective.colonyId().writeToItemStack(stored);
+        }
+        if (effective.buildingId().hasId()) {
+            effective.buildingId().writeToItemStack(stored);
+        }
+        if (!effective.warehouseSnapshot().hash().isEmpty() || !effective.warehouseSnapshot().snapshot().isEmpty()) {
+            effective.warehouseSnapshot().writeToItemStack(stored);
+        }
+        return stored;
     }
 
     public static boolean removeResourceScroll(ServerPlayer player, ItemStack clipboard, int slot) {
@@ -113,8 +130,24 @@ public final class SmartClipboardScrollStorage {
         NonNullList<ItemStack> contents = NonNullList.withSize(SLOT_COUNT, ItemStack.EMPTY);
         for (int i = 0; i < SLOT_COUNT && i < scrolls.size(); i++) {
             ItemStack stack = scrolls.get(i);
-            contents.set(i, isResourceScroll(stack) ? stack.copyWithCount(1) : ItemStack.EMPTY);
+            contents.set(i, isResourceScroll(stack) ? sanitizedScrollStack(stack, ScrollLinkSnapshot.from(stack)) : ItemStack.EMPTY);
         }
         clipboard.set(DataComponents.CONTAINER, ItemContainerContents.fromItems(contents));
+    }
+
+    public record ScrollLinkSnapshot(ColonyId colonyId, BuildingId buildingId, WarehouseSnapshot warehouseSnapshot) {
+        public static final ScrollLinkSnapshot EMPTY = new ScrollLinkSnapshot(ColonyId.EMPTY, BuildingId.EMPTY, WarehouseSnapshot.EMPTY);
+
+        public static ScrollLinkSnapshot from(ItemStack stack) {
+            return new ScrollLinkSnapshot(
+                    ColonyId.readFromItemStack(stack),
+                    BuildingId.readFromItemStack(stack),
+                    WarehouseSnapshot.readFromItemStack(stack)
+            );
+        }
+
+        public boolean hasLink() {
+            return colonyId.hasColonyId() || buildingId.hasId() || !warehouseSnapshot.hash().isEmpty() || !warehouseSnapshot.snapshot().isEmpty();
+        }
     }
 }

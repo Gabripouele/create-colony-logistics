@@ -2,6 +2,7 @@ package com.createcolonylogistics.client;
 
 import com.createcolonylogistics.CreateColonyLogistics;
 import com.createcolonylogistics.clipboard.SmartClipboardReport;
+import com.createcolonylogistics.clipboard.SmartClipboardScrollStorage.ScrollLinkSnapshot;
 import com.createcolonylogistics.network.ServerboundSmartClipboardDebugPacket;
 import com.createcolonylogistics.network.ServerboundSmartClipboardScrollPacket;
 import com.createcolonylogistics.network.ServerboundSmartScrollDebugPacket;
@@ -499,7 +500,7 @@ public class SmartClipboardScreen extends Screen {
                     PacketDistributor.sendToServer(new ServerboundSmartClipboardScrollPacket(
                             ServerboundSmartClipboardScrollPacket.REMOVE,
                             i,
-                            ItemStack.EMPTY
+                            ScrollLinkSnapshot.EMPTY
                     ));
                 } else {
                     selectedScroll = i;
@@ -520,7 +521,10 @@ public class SmartClipboardScreen extends Screen {
             showScrollDebugMessage("Smart Scroll debug: no selected scroll");
             PacketDistributor.sendToServer(new ServerboundSmartScrollDebugPacket(
                     selectedScroll,
-                    ItemStack.EMPTY,
+                    "empty",
+                    0,
+                    false,
+                    ScrollLinkSnapshot.EMPTY,
                     false,
                     "no selected scroll",
                     0,
@@ -532,7 +536,10 @@ public class SmartClipboardScreen extends Screen {
         ResourceScrollContent content = dumpSelectedScrollDebug(selectedScroll, selected);
         PacketDistributor.sendToServer(new ServerboundSmartScrollDebugPacket(
                 selectedScroll,
-                selected,
+                String.valueOf(BuiltInRegistries.ITEM.getKey(selected.getItem())),
+                selected.getCount(),
+                !selected.getComponentsPatch().isEmpty(),
+                ScrollLinkSnapshot.from(selected),
                 content.error().isBlank() && !content.resources().isEmpty(),
                 content.error(),
                 content.moduleResourceCount(),
@@ -587,18 +594,18 @@ public class SmartClipboardScreen extends Screen {
         }
     }
 
-    private ItemStack firstInventoryResourceScroll() {
+    private ScrollLinkSnapshot firstInventoryResourceScroll() {
         Minecraft minecraft = Minecraft.getInstance();
         if (minecraft.player == null) {
-            return ItemStack.EMPTY;
+            return ScrollLinkSnapshot.EMPTY;
         }
         for (int i = 0; i < minecraft.player.getInventory().getContainerSize(); i++) {
             ItemStack stack = minecraft.player.getInventory().getItem(i);
             if (!stack.isEmpty() && RESOURCE_SCROLL_ID.equals(BuiltInRegistries.ITEM.getKey(stack.getItem()))) {
-                return stack.copyWithCount(1);
+                return ScrollLinkSnapshot.from(stack);
             }
         }
-        return ItemStack.EMPTY;
+        return ScrollLinkSnapshot.EMPTY;
     }
 
     @Override

@@ -2,6 +2,7 @@ package com.createcolonylogistics.network;
 
 import com.createcolonylogistics.CreateColonyLogistics;
 import com.createcolonylogistics.clipboard.SmartClipboardScrollStorage;
+import com.createcolonylogistics.clipboard.SmartClipboardScrollStorage.ScrollLinkSnapshot;
 import com.minecolonies.api.colony.buildings.views.IBuildingView;
 import com.minecolonies.api.items.component.BuildingId;
 import com.minecolonies.api.items.component.ColonyId;
@@ -19,7 +20,10 @@ import java.util.Optional;
 
 public record ServerboundSmartScrollDebugPacket(
         int selectedSlot,
-        ItemStack selectedStack,
+        String selectedItemId,
+        int selectedCount,
+        boolean selectedHasComponents,
+        ScrollLinkSnapshot selectedLink,
         boolean clientAdapterList,
         String clientError,
         int clientModuleResources,
@@ -36,7 +40,10 @@ public record ServerboundSmartScrollDebugPacket(
     private static ServerboundSmartScrollDebugPacket decode(RegistryFriendlyByteBuf buffer) {
         return new ServerboundSmartScrollDebugPacket(
                 buffer.readVarInt(),
-                ItemStack.OPTIONAL_STREAM_CODEC.decode(buffer),
+                buffer.readUtf(),
+                buffer.readVarInt(),
+                buffer.readBoolean(),
+                readSnapshot(buffer),
                 buffer.readBoolean(),
                 buffer.readUtf(),
                 buffer.readVarInt(),
@@ -47,7 +54,10 @@ public record ServerboundSmartScrollDebugPacket(
 
     private void encode(RegistryFriendlyByteBuf buffer) {
         buffer.writeVarInt(selectedSlot);
-        ItemStack.OPTIONAL_STREAM_CODEC.encode(buffer, selectedStack);
+        buffer.writeUtf(selectedItemId);
+        buffer.writeVarInt(selectedCount);
+        buffer.writeBoolean(selectedHasComponents);
+        writeSnapshot(buffer, selectedLink);
         buffer.writeBoolean(clientAdapterList);
         buffer.writeUtf(clientError);
         buffer.writeVarInt(clientModuleResources);
@@ -66,7 +76,7 @@ public record ServerboundSmartScrollDebugPacket(
                     ? storedScrolls.get(packet.selectedSlot())
                     : ItemStack.EMPTY;
 
-            logStack("client-selected", packet.selectedSlot(), packet.selectedStack());
+            logClientSnapshot(packet);
             logStack("server-stored", packet.selectedSlot(), storedStack);
             CreateColonyLogistics.LOGGER.info("[SmartScrollDebug] ServerPath: player={} slot={} clipboardFound={} storedSlots={} clientAdapterList={} clientError='{}' clientModuleResources={} clientAdaptedResources={} clientRenderedRows={}",
                     player.getGameProfile().getName(),
@@ -80,6 +90,20 @@ public record ServerboundSmartScrollDebugPacket(
                     packet.clientRenderedRows());
             player.sendSystemMessage(Component.literal("Smart Scroll server debug logged for slot " + packet.selectedSlot() + "."));
         });
+    }
+
+    private static void logClientSnapshot(ServerboundSmartScrollDebugPacket packet) {
+        ScrollLinkSnapshot snapshot = packet.selectedLink() == null ? ScrollLinkSnapshot.EMPTY : packet.selectedLink();
+        CreateColonyLogistics.LOGGER.info("[SmartScrollDebug] Stack[client-selected]: slot={} item={} count={} hasComponents={} hasColonyId={} colonyId={} dimension={} hasBuildingId={} buildingPos={} viewResolved=n/a viewClass=client-snapshot isBuildingBuilderView=n/a",
+                packet.selectedSlot(),
+                packet.selectedItemId(),
+                packet.selectedCount(),
+                packet.selectedHasComponents(),
+                snapshot.colonyId().hasColonyId(),
+                snapshot.colonyId().id(),
+                snapshot.colonyId().dimension().location(),
+                snapshot.buildingId().hasId(),
+                snapshot.buildingId().id());
     }
 
     private static void logStack(String label, int slot, ItemStack stack) {
@@ -105,5 +129,20 @@ public record ServerboundSmartScrollDebugPacket(
     @Override
     public Type<? extends CustomPacketPayload> type() {
         return TYPE;
+    }
+
+    private static ScrollLinkSnapshot readSnapshot(RegistryFriendlyByteBuf buffer) {
+        return new ScrollLinkSnapshot(
+                ColonyId.STREAM_CODEC.decode(buffer),
+                BuildingId.STREAM_CODEC.decode(buffer),
+                com.minecolonies.api.items.component.WarehouseSnapshot.STREAM_CODEC.decode(buffer)
+        );
+    }
+
+    private static void writeSnapshot(RegistryFriendlyByteBuf buffer, ScrollLinkSnapshot snapshot) {
+        ScrollLinkSnapshot safe = snapshot == null ? ScrollLinkSnapshot.EMPTY : snapshot;
+        ColonyId.STREAM_CODEC.encode(buffer, safe.colonyId());
+        BuildingId.STREAM_CODEC.encode(buffer, safe.buildingId());
+        com.minecolonies.api.items.component.WarehouseSnapshot.STREAM_CODEC.encode(buffer, safe.warehouseSnapshot());
     }
 }
