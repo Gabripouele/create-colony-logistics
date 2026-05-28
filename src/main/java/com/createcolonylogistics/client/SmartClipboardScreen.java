@@ -49,6 +49,7 @@ import java.util.Set;
 
 public class SmartClipboardScreen extends Screen {
     private static final ResourceLocation STOCK_KEEPER_TEXTURE = ResourceLocation.fromNamespaceAndPath(CreateColonyLogistics.MOD_ID, "textures/gui/smart_clipboard_gui.png");
+    private static final ResourceLocation IMPORTANT_TOGGLE_OVERLAY = ResourceLocation.fromNamespaceAndPath(CreateColonyLogistics.MOD_ID, "textures/gui/eletron_overlay.png");
     private static final ResourceLocation RESOURCE_SCROLL_ID = ResourceLocation.fromNamespaceAndPath("minecolonies", "resourcescroll");
     private static final ResourceLocation MINECOLONIES_CLIPBOARD_ID = ResourceLocation.fromNamespaceAndPath("minecolonies", "clipboard");
     private static final int TEXTURE_WIDTH = 256;
@@ -81,7 +82,11 @@ public class SmartClipboardScreen extends Screen {
     private static final int SCROLLBAR_TRACK_TOP_INSET = 2;
     private static final int SCROLLBAR_TRACK_BOTTOM_INSET = 2;
     private static final int SCROLLBAR_THUMB_HEIGHT = 9;
-    private static final int IMPORTANT_BUTTON_SIZE = 11;
+    private static final int IMPORTANT_TOGGLE_X = 217;
+    private static final int IMPORTANT_TOGGLE_Y = 10;
+    private static final int IMPORTANT_TOGGLE_WIDTH = 8;
+    private static final int IMPORTANT_TOGGLE_HEIGHT = 9;
+    private static final int IMPORTANT_TOGGLE_HITBOX_PADDING = 3;
     private static final int TREE_INDENT = 8;
     private static final int TREE_ROW_HEIGHT = 18;
     private static final int RESOURCE_ROW_HEIGHT = 36;
@@ -143,9 +148,9 @@ public class SmartClipboardScreen extends Screen {
                 ? title
                 : Component.translatable("screen.create_colony_logistics.smart_clipboard.scrolls_title"), 196);
         graphics.drawString(font, headerTitle, leftPos + (PANEL_WIDTH - font.width(headerTitle)) / 2, topPos + TITLE_Y, TITLE_TEXT, false);
-        graphics.drawString(font, truncate(Component.literal(displayedColonyName()), activeTab == Tab.REQUESTS ? LIST_WIDTH - IMPORTANT_BUTTON_SIZE - 5 : LIST_WIDTH), leftPos + LIST_X, topPos + COLONY_LINE_Y, SECONDARY_TEXT, false);
+        graphics.drawString(font, truncate(Component.literal(displayedColonyName()), LIST_WIDTH), leftPos + LIST_X, topPos + COLONY_LINE_Y, SECONDARY_TEXT, false);
         if (activeTab == Tab.REQUESTS) {
-            renderImportantButton(graphics, mouseX, mouseY);
+            renderImportantToggle(graphics, mouseX, mouseY);
             graphics.drawString(font, truncate(Component.translatable("screen.create_colony_logistics.smart_clipboard.summary", report.activeRequestCount(), report.buildingCount()), LIST_WIDTH), leftPos + LIST_X, topPos + SUMMARY_LINE_Y, SECONDARY_TEXT, false);
         }
 
@@ -239,20 +244,12 @@ public class SmartClipboardScreen extends Screen {
         return topPos + TAB_Y;
     }
 
-    private void renderImportantButton(GuiGraphics graphics, int mouseX, int mouseY) {
-        int x = importantButtonX();
-        int y = importantButtonY();
-        int fill = 0x805E5A52;
-        int bangColor = importantOnly ? 0xFFFF5555 : 0xFF55DD55;
-        graphics.fill(x, y, x + IMPORTANT_BUTTON_SIZE, y + IMPORTANT_BUTTON_SIZE, fill);
-        graphics.fill(x, y, x + IMPORTANT_BUTTON_SIZE, y + 1, DIVIDER_LINE);
-        graphics.fill(x, y + IMPORTANT_BUTTON_SIZE - 1, x + IMPORTANT_BUTTON_SIZE, y + IMPORTANT_BUTTON_SIZE, DIVIDER_LINE);
-        graphics.fill(x, y, x + 1, y + IMPORTANT_BUTTON_SIZE, DIVIDER_LINE);
-        graphics.fill(x + IMPORTANT_BUTTON_SIZE - 1, y, x + IMPORTANT_BUTTON_SIZE, y + IMPORTANT_BUTTON_SIZE, DIVIDER_LINE);
-        int textX = x + (IMPORTANT_BUTTON_SIZE - font.width("!")) / 2;
-        int textY = y + (IMPORTANT_BUTTON_SIZE - font.lineHeight) / 2;
-        graphics.drawString(font, "!", textX, textY, bangColor, false);
-        if (mouseX >= x && mouseX < x + IMPORTANT_BUTTON_SIZE && mouseY >= y && mouseY < y + IMPORTANT_BUTTON_SIZE) {
+    private void renderImportantToggle(GuiGraphics graphics, int mouseX, int mouseY) {
+        if (importantOnly) {
+            graphics.blit(IMPORTANT_TOGGLE_OVERLAY, leftPos + IMPORTANT_TOGGLE_X, topPos + IMPORTANT_TOGGLE_Y,
+                    IMPORTANT_TOGGLE_X, IMPORTANT_TOGGLE_Y, IMPORTANT_TOGGLE_WIDTH, IMPORTANT_TOGGLE_HEIGHT);
+        }
+        if (importantToggleHit(mouseX, mouseY)) {
             graphics.renderTooltip(font, Component.translatable(importantOnly
                     ? "screen.create_colony_logistics.smart_clipboard.filtering_important"
                     : "screen.create_colony_logistics.smart_clipboard.filtering_all"), mouseX, mouseY);
@@ -546,8 +543,7 @@ public class SmartClipboardScreen extends Screen {
             showScrollDebugMessage("Smart Scroll debug ignored: not Scrolls tab");
         }
 
-        if (mouseX >= importantButtonX() && mouseX < importantButtonX() + IMPORTANT_BUTTON_SIZE
-                && mouseY >= importantButtonY() && mouseY < importantButtonY() + IMPORTANT_BUTTON_SIZE) {
+        if (importantToggleHit(mouseX, mouseY)) {
             importantOnly = !importantOnly;
             scroll = 0;
             return true;
@@ -1454,12 +1450,27 @@ public class SmartClipboardScreen extends Screen {
         return stacks.get(index);
     }
 
-    private int importantButtonX() {
-        return leftPos + 14;
+    private boolean importantToggleHit(double mouseX, double mouseY) {
+        return mouseX >= importantToggleHitboxX()
+                && mouseX < importantToggleHitboxX() + importantToggleHitboxWidth()
+                && mouseY >= importantToggleHitboxY()
+                && mouseY < importantToggleHitboxY() + importantToggleHitboxHeight();
     }
 
-    private int importantButtonY() {
-        return topPos + 14;
+    private int importantToggleHitboxX() {
+        return leftPos + IMPORTANT_TOGGLE_X - IMPORTANT_TOGGLE_HITBOX_PADDING;
+    }
+
+    private int importantToggleHitboxY() {
+        return topPos + IMPORTANT_TOGGLE_Y - IMPORTANT_TOGGLE_HITBOX_PADDING;
+    }
+
+    private int importantToggleHitboxWidth() {
+        return IMPORTANT_TOGGLE_WIDTH + IMPORTANT_TOGGLE_HITBOX_PADDING * 2;
+    }
+
+    private int importantToggleHitboxHeight() {
+        return IMPORTANT_TOGGLE_HEIGHT + IMPORTANT_TOGGLE_HITBOX_PADDING * 2;
     }
 
     private String treeNodeText(SmartClipboardReport.RequestTreeNode node) {
