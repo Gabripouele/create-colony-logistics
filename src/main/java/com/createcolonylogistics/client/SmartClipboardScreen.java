@@ -66,11 +66,14 @@ public class SmartClipboardScreen extends Screen {
     private static final int COLLAPSED_HEIGHT = 28;
     private static final int EXPANDED_TOP_PADDING = 30;
     private static final int EXPANDED_BOTTOM_PADDING = 6;
-    private static final int HEADER_TEXT = 0xFF4A2D11;
-    private static final int SEPARATOR = 0xAA3C2412;
-    private static final int TEXT = 0xFFFFFFFF;
-    private static final int MUTED = 0xFFB7A98D;
-    private static final int DIM = 0xFF8D7F6B;
+    private static final int PRIMARY_TEXT = 0xFF5F4939;
+    private static final int TITLE_TEXT = 0xFF3F2A19;
+    private static final int LABEL_TEXT = 0xFF4A2D18;
+    private static final int SECONDARY_TEXT = 0xFF8A6B4F;
+    private static final int MUTED_TEXT = 0xFFA88F73;
+    private static final int QUANTITY_TEXT = 0xFF7C5F45;
+    private static final int DIVIDER_LINE = 0xFF7B5E46;
+    private static final int INACTIVE_TAB_TEXT = 0xFFE6D8C0;
     private static final int SMART_INFO_HEADER_COLOR = 0xA0A0A0;
     private static final int SMART_INFO_LABEL_COLOR = 0xFFF2D78C;
     private static final int SMART_INFO_VALUE_COLOR = 0xFF8FA7FF;
@@ -115,18 +118,18 @@ public class SmartClipboardScreen extends Screen {
         Component headerTitle = truncate(activeTab == Tab.REQUESTS
                 ? title
                 : Component.translatable("screen.create_colony_logistics.smart_clipboard.scrolls_title"), 196);
-        graphics.drawString(font, headerTitle, leftPos + (IMAGE_WIDTH - font.width(headerTitle)) / 2, topPos + 4, HEADER_TEXT, false);
-        graphics.drawString(font, truncate(Component.literal(report.colonyName()), activeTab == Tab.REQUESTS ? LIST_WIDTH - IMPORTANT_BUTTON_SIZE - 5 : LIST_WIDTH), leftPos + LIST_X, topPos + 27, TEXT, false);
+        graphics.drawString(font, headerTitle, leftPos + (IMAGE_WIDTH - font.width(headerTitle)) / 2, topPos + 9, TITLE_TEXT, false);
+        graphics.drawString(font, truncate(Component.literal(report.colonyName()), activeTab == Tab.REQUESTS ? LIST_WIDTH - IMPORTANT_BUTTON_SIZE - 5 : LIST_WIDTH), leftPos + LIST_X, topPos + 27, SECONDARY_TEXT, false);
         if (activeTab == Tab.REQUESTS) {
             renderImportantButton(graphics, mouseX, mouseY);
         }
         graphics.drawString(font, truncate(activeTab == Tab.REQUESTS
                 ? Component.translatable("screen.create_colony_logistics.smart_clipboard.summary", report.activeRequestCount(), report.buildingCount())
-                : Component.translatable("screen.create_colony_logistics.smart_clipboard.scrolls_summary", nonEmptyScrollCount()), LIST_WIDTH), leftPos + LIST_X, topPos + 39, MUTED, false);
+                : Component.translatable("screen.create_colony_logistics.smart_clipboard.scrolls_summary", nonEmptyScrollCount()), LIST_WIDTH), leftPos + LIST_X, topPos + 39, SECONDARY_TEXT, false);
 
         int listTop = topPos + LIST_TOP + (activeTab == Tab.SCROLLS ? 5 : 0);
         int listBottom = topPos + LIST_BOTTOM;
-        graphics.fill(leftPos + LIST_X, listTop - 3, leftPos + LIST_X + LIST_WIDTH, listTop - 2, SEPARATOR);
+        graphics.fill(leftPos + LIST_X, listTop - 3, leftPos + LIST_X + LIST_WIDTH, listTop - 2, DIVIDER_LINE);
         scroll = Math.min(scroll, maxScroll(listTop, listBottom));
         graphics.enableScissor(leftPos + LIST_X, listTop, leftPos + LIST_X + LIST_WIDTH, listBottom);
         contentHeight = activeTab == Tab.REQUESTS
@@ -163,12 +166,12 @@ public class SmartClipboardScreen extends Screen {
     private void renderPageTab(GuiGraphics graphics, Tab tab, int x, int y, Component label, int mouseX, int mouseY) {
         boolean active = activeTab == tab;
         int fill = active ? 0xFFE1C78F : 0xCC8D7F6B;
-        int border = active ? HEADER_TEXT : SEPARATOR;
+        int border = active ? TITLE_TEXT : DIVIDER_LINE;
         graphics.fill(x, y, x + TAB_WIDTH, y + TAB_HEIGHT, fill);
         graphics.fill(x, y, x + TAB_WIDTH, y + 1, border);
         graphics.fill(x, y, x + 1, y + TAB_HEIGHT, border);
         graphics.fill(x + TAB_WIDTH - 1, y, x + TAB_WIDTH, y + TAB_HEIGHT, border);
-        graphics.drawString(font, truncate(label, TAB_WIDTH - 8), x + 4, y + 5, active ? HEADER_TEXT : MUTED, false);
+        graphics.drawString(font, truncate(label, TAB_WIDTH - 8), x + 4, y + 5, active ? TITLE_TEXT : INACTIVE_TAB_TEXT, false);
     }
 
     private void renderImportantButton(GuiGraphics graphics, int mouseX, int mouseY) {
@@ -177,10 +180,10 @@ public class SmartClipboardScreen extends Screen {
         int fill = 0x805E5A52;
         int bangColor = importantOnly ? 0xFFFF5555 : 0xFF55DD55;
         graphics.fill(x, y, x + IMPORTANT_BUTTON_SIZE, y + IMPORTANT_BUTTON_SIZE, fill);
-        graphics.fill(x, y, x + IMPORTANT_BUTTON_SIZE, y + 1, SEPARATOR);
-        graphics.fill(x, y + IMPORTANT_BUTTON_SIZE - 1, x + IMPORTANT_BUTTON_SIZE, y + IMPORTANT_BUTTON_SIZE, SEPARATOR);
-        graphics.fill(x, y, x + 1, y + IMPORTANT_BUTTON_SIZE, SEPARATOR);
-        graphics.fill(x + IMPORTANT_BUTTON_SIZE - 1, y, x + IMPORTANT_BUTTON_SIZE, y + IMPORTANT_BUTTON_SIZE, SEPARATOR);
+        graphics.fill(x, y, x + IMPORTANT_BUTTON_SIZE, y + 1, DIVIDER_LINE);
+        graphics.fill(x, y + IMPORTANT_BUTTON_SIZE - 1, x + IMPORTANT_BUTTON_SIZE, y + IMPORTANT_BUTTON_SIZE, DIVIDER_LINE);
+        graphics.fill(x, y, x + 1, y + IMPORTANT_BUTTON_SIZE, DIVIDER_LINE);
+        graphics.fill(x + IMPORTANT_BUTTON_SIZE - 1, y, x + IMPORTANT_BUTTON_SIZE, y + IMPORTANT_BUTTON_SIZE, DIVIDER_LINE);
         int textX = x + (IMPORTANT_BUTTON_SIZE - font.width("!")) / 2;
         int textY = y + (IMPORTANT_BUTTON_SIZE - font.lineHeight) / 2;
         graphics.drawString(font, "!", textX, textY, bangColor, false);
@@ -199,9 +202,9 @@ public class SmartClipboardScreen extends Screen {
 
         if (visibleIndexes.isEmpty()) {
             Component empty = Component.translatable("screen.create_colony_logistics.smart_clipboard.empty");
-            graphics.drawString(font, truncate(empty, cardWidth), x, y + 12, MUTED, false);
+            graphics.drawString(font, truncate(empty, cardWidth), x, y + 12, MUTED_TEXT, false);
             if (report.capped()) {
-                graphics.drawString(font, Component.translatable("screen.create_colony_logistics.smart_clipboard.capped"), x, y + 26, DIM, false);
+                graphics.drawString(font, Component.translatable("screen.create_colony_logistics.smart_clipboard.capped"), x, y + 26, MUTED_TEXT, false);
             }
             return 48;
         }
@@ -216,7 +219,7 @@ public class SmartClipboardScreen extends Screen {
         }
 
         if (report.capped()) {
-            graphics.drawString(font, Component.translatable("screen.create_colony_logistics.smart_clipboard.capped"), x, y + 4, DIM, false);
+            graphics.drawString(font, Component.translatable("screen.create_colony_logistics.smart_clipboard.capped"), x, y + 4, MUTED_TEXT, false);
             y += 20;
         }
 
@@ -227,17 +230,17 @@ public class SmartClipboardScreen extends Screen {
         int x = leftPos + LIST_X;
         int y = listTop - scroll;
         List<ItemStack> scrolls = report.resourceScrolls();
-        graphics.drawString(font, Component.translatable("screen.create_colony_logistics.smart_clipboard.scroll_storage"), x, y, HEADER_TEXT, false);
+        graphics.drawString(font, Component.translatable("screen.create_colony_logistics.smart_clipboard.scroll_storage"), x, y, TITLE_TEXT, false);
         y += 13;
 
         for (int i = 0; i < SmartClipboardScrollStorage.SLOT_COUNT; i++) {
             int slotX = scrollSlotX(x, i);
             int slotY = scrollSlotY(y, i);
             graphics.fill(slotX, slotY, slotX + 18, slotY + 18, 0x805E5A52);
-            graphics.fill(slotX, slotY, slotX + 18, slotY + 1, SEPARATOR);
-            graphics.fill(slotX, slotY + 17, slotX + 18, slotY + 18, SEPARATOR);
-            graphics.fill(slotX, slotY, slotX + 1, slotY + 18, SEPARATOR);
-            graphics.fill(slotX + 17, slotY, slotX + 18, slotY + 18, SEPARATOR);
+            graphics.fill(slotX, slotY, slotX + 18, slotY + 1, DIVIDER_LINE);
+            graphics.fill(slotX, slotY + 17, slotX + 18, slotY + 18, DIVIDER_LINE);
+            graphics.fill(slotX, slotY, slotX + 1, slotY + 18, DIVIDER_LINE);
+            graphics.fill(slotX + 17, slotY, slotX + 18, slotY + 18, DIVIDER_LINE);
             ItemStack stack = i < scrolls.size() ? scrolls.get(i) : ItemStack.EMPTY;
             if (!stack.isEmpty()) {
                 graphics.renderItem(stack, slotX + 1, slotY + 1);
@@ -248,20 +251,20 @@ public class SmartClipboardScreen extends Screen {
                     graphics.fill(slotX + 17, slotY, slotX + 18, slotY + 18, 0xFF55DD55);
                 }
             } else {
-                graphics.drawString(font, "+", slotX + 6, slotY + 5, DIM, false);
+                graphics.drawString(font, "+", slotX + 6, slotY + 5, MUTED_TEXT, false);
             }
         }
         y += scrollSlotGridHeight();
-        graphics.fill(x, y - 6, x + LIST_WIDTH, y - 5, SEPARATOR);
+        graphics.fill(x, y - 6, x + LIST_WIDTH, y - 5, DIVIDER_LINE);
 
         ItemStack selected = selectedScroll >= 0 && selectedScroll < scrolls.size() ? scrolls.get(selectedScroll) : ItemStack.EMPTY;
         if (selected.isEmpty()) {
-            graphics.drawString(font, truncate(Component.literal("No Resource Scroll selected."), LIST_WIDTH), x, y, MUTED, false);
+            graphics.drawString(font, truncate(Component.literal("No Resource Scroll selected."), LIST_WIDTH), x, y, MUTED_TEXT, false);
             return y + 14 - (listTop - scroll);
         }
 
         graphics.renderItem(selected, x, y);
-        graphics.drawString(font, truncate(Component.literal(sanitizeScrollLine(selected.getHoverName().getString())), LIST_WIDTH - 22), x + 22, y + 4, TEXT, false);
+        graphics.drawString(font, truncate(Component.literal(sanitizeScrollLine(selected.getHoverName().getString())), LIST_WIDTH - 22), x + 22, y + 4, PRIMARY_TEXT, false);
         y += 24;
         y = renderSelectedScrollFromClientStack(graphics, selected, x, y);
         return Math.max(0, y - (listTop - scroll));
@@ -270,31 +273,31 @@ public class SmartClipboardScreen extends Screen {
     private int renderSelectedScrollFromClientStack(GuiGraphics graphics, ItemStack selectedClientScroll, int x, int y) {
         ResourceScrollContent content = buildClientResourceScrollRows(selectedClientScroll);
         if (!content.error().isBlank()) {
-            graphics.drawString(font, truncate(Component.literal(content.error()), LIST_WIDTH), x, y, MUTED, false);
+            graphics.drawString(font, truncate(Component.literal(content.error()), LIST_WIDTH), x, y, MUTED_TEXT, false);
             return y + 14;
         }
         if (content.resources().isEmpty()) {
-            graphics.drawString(font, truncate(Component.literal("This Builder is Idle."), LIST_WIDTH), x, y, MUTED, false);
+            graphics.drawString(font, truncate(Component.literal("This Builder is Idle."), LIST_WIDTH), x, y, MUTED_TEXT, false);
             return y + 14;
         }
 
-        graphics.drawString(font, truncate(Component.literal(sanitizeScrollLine(content.buildingTitle())), LIST_WIDTH), x, y, TEXT, false);
+        graphics.drawString(font, truncate(Component.literal(sanitizeScrollLine(content.buildingTitle())), LIST_WIDTH), x, y, PRIMARY_TEXT, false);
         y += LINE_HEIGHT;
         if (!content.projectTitle().isBlank()) {
-            graphics.drawString(font, truncate(Component.literal(sanitizeScrollLine(content.projectTitle())), LIST_WIDTH), x, y, MUTED, false);
+            graphics.drawString(font, truncate(Component.literal(sanitizeScrollLine(content.projectTitle())), LIST_WIDTH), x, y, SECONDARY_TEXT, false);
             y += LINE_HEIGHT;
         }
-        graphics.drawString(font, truncate(Component.translatable("screen.create_colony_logistics.smart_clipboard.progress", content.suppliedPercent(), content.usedPercent()), LIST_WIDTH), x, y, MUTED, false);
+        graphics.drawString(font, truncate(Component.translatable("screen.create_colony_logistics.smart_clipboard.progress", content.suppliedPercent(), content.usedPercent()), LIST_WIDTH), x, y, SECONDARY_TEXT, false);
         y += LINE_HEIGHT + 3;
 
         for (ResourceLine resource : content.resources()) {
             int textWidth = Math.max(30, LIST_WIDTH - 22);
             graphics.renderItem(resource.stack(), x, y);
-            graphics.drawString(font, truncate(Component.literal(sanitizeScrollLine(resource.name())), textWidth), x + 22, y + 1, TEXT, false);
+            graphics.drawString(font, truncate(Component.literal(sanitizeScrollLine(resource.name())), textWidth), x + 22, y + 1, PRIMARY_TEXT, false);
             drawNeededLine(graphics, resource, x + 22, y + 11, textWidth);
             graphics.drawString(font, truncate(Component.translatable("screen.create_colony_logistics.smart_clipboard.supplied", resource.available(), resource.required()), textWidth), x + 22, y + 21, resource.suppliedColor(), false);
             if (resource.deliveryOrWarehouseAmount() > 0) {
-                graphics.drawString(font, truncate(Component.literal(String.valueOf(resource.deliveryOrWarehouseAmount())), 24), x + LIST_WIDTH - 24, y + 11, MUTED, false);
+                graphics.drawString(font, truncate(Component.literal(String.valueOf(resource.deliveryOrWarehouseAmount())), 24), x + LIST_WIDTH - 24, y + 11, SECONDARY_TEXT, false);
             }
             y += 34;
         }
@@ -303,7 +306,7 @@ public class SmartClipboardScreen extends Screen {
 
     private void drawNeededLine(GuiGraphics graphics, ResourceLine resource, int x, int y, int width) {
         Component label = Component.literal("Needed: ");
-        graphics.drawString(font, truncate(label, width), x, y, MUTED, false);
+        graphics.drawString(font, truncate(label, width), x, y, LABEL_TEXT, false);
         int valueX = x + font.width(label);
         graphics.drawString(font, truncate(Component.literal(String.valueOf(resource.missing())), Math.max(0, width - font.width(label))), valueX, y, resource.neededValueColor(), false);
     }
@@ -317,17 +320,13 @@ public class SmartClipboardScreen extends Screen {
     }
 
     private void renderEntry(GuiGraphics graphics, SmartClipboardReport.Entry entry, int index, int x, int y, int width, int height) {
-        graphics.fill(x, y + height - 1, x + width, y + height, SEPARATOR);
+        graphics.fill(x, y + height - 1, x + width, y + height, DIVIDER_LINE);
         ItemStack shownStack = displayStack(entry);
         graphics.renderItem(shownStack, x + 2, y + 4);
         graphics.renderItemDecorations(font, shownStack, x + 2, y + 4);
 
         int textX = x + 24;
-        Component name = Component.empty()
-                .append(entry.requestedStack().getHoverName())
-                .append(" ")
-                .append(entry.quantityDisplay());
-        graphics.drawString(font, truncate(name, width - 28), textX, y + 3, TEXT, false);
+        drawNameWithQuantity(graphics, textX, y + 3, entry.requestedStack().getHoverName(), entry.quantityDisplay(), width - 28);
         drawLabelValue(graphics, textX, y + 15,
                 Component.translatable("screen.create_colony_logistics.smart_clipboard.requester_label"),
                 Component.literal(displayRequester(entry)), width - 28);
@@ -355,21 +354,47 @@ public class SmartClipboardScreen extends Screen {
         }
         Component label = Component.translatable(key + "_label");
         int maxWidth = Math.max(40, leftPos + LIST_X + LIST_WIDTH - x - 4);
-        graphics.drawString(font, truncate(label, maxWidth), x, y, HEADER_TEXT, false);
+        graphics.drawString(font, truncate(label, maxWidth), x, y, LABEL_TEXT, false);
         int valueX = x + font.width(label);
-        graphics.drawString(font, truncate(Component.literal(value), Math.max(20, leftPos + LIST_X + LIST_WIDTH - valueX - 4)), valueX, y, MUTED, false);
+        graphics.drawString(font, truncate(Component.literal(value), Math.max(20, leftPos + LIST_X + LIST_WIDTH - valueX - 4)), valueX, y, SECONDARY_TEXT, false);
         return y + LINE_HEIGHT;
     }
 
     private void drawLabelValue(GuiGraphics graphics, int x, int y, Component label, Component value, int width) {
         int labelWidth = Math.min(font.width(label), width);
-        graphics.drawString(font, truncate(label, width), x, y, HEADER_TEXT, false);
+        graphics.drawString(font, truncate(label, width), x, y, LABEL_TEXT, false);
         int valueX = x + labelWidth;
-        graphics.drawString(font, truncate(value, Math.max(10, width - labelWidth)), valueX, y, MUTED, false);
+        graphics.drawString(font, truncate(value, Math.max(10, width - labelWidth)), valueX, y, SECONDARY_TEXT, false);
+    }
+
+    private void drawNameWithQuantity(GuiGraphics graphics, int x, int y, Component name, String quantity, int width) {
+        drawComponentWithQuantity(graphics, x, y, name, quantity, width, PRIMARY_TEXT);
+    }
+
+    private void drawTreeNodeText(GuiGraphics graphics, int x, int y, SmartClipboardReport.RequestTreeNode node, int width) {
+        Component name = node.stack().isEmpty()
+                ? Component.literal(cleanTreeLabel(node.label()))
+                : node.stack().getHoverName();
+        String quantity = node.quantityDisplay() == null || node.quantityDisplay().isBlank()
+                ? "x" + Math.max(1, node.count())
+                : node.quantityDisplay();
+        int nameColor = node.depth() <= 1 ? PRIMARY_TEXT : SECONDARY_TEXT;
+        drawComponentWithQuantity(graphics, x, y, name, quantity, width, nameColor);
+    }
+
+    private void drawComponentWithQuantity(GuiGraphics graphics, int x, int y, Component name, String quantity, int width, int nameColor) {
+        String safeQuantity = quantity == null ? "" : quantity.strip();
+        int quantityWidth = safeQuantity.isBlank() ? 0 : font.width(" " + safeQuantity);
+        int nameWidth = Math.max(0, width - quantityWidth);
+        Component shownName = truncate(name, nameWidth);
+        graphics.drawString(font, shownName, x, y, nameColor, false);
+        if (!safeQuantity.isBlank() && width >= quantityWidth) {
+            graphics.drawString(font, " " + safeQuantity, x + font.width(shownName), y, QUANTITY_TEXT, false);
+        }
     }
 
     private int label(GuiGraphics graphics, int x, int y, String key) {
-        graphics.drawString(font, Component.translatable(key), x, y, HEADER_TEXT, false);
+        graphics.drawString(font, Component.translatable(key), x, y, LABEL_TEXT, false);
         return y + LINE_HEIGHT;
     }
 
@@ -381,15 +406,13 @@ public class SmartClipboardScreen extends Screen {
         boolean expandable = hasDependencyChildren(dependencies, nodeIndex);
         boolean expanded = expandedDependencies.contains(dependencyKey(entryIndex, nodeIndex));
         String marker = expandable ? (expanded ? "v" : ">") : "-";
-        graphics.drawString(font, marker, x + indent, y + 4, HEADER_TEXT, false);
+        graphics.drawString(font, marker, x + indent, y + 4, LABEL_TEXT, false);
 
         ItemStack stack = node.stack();
         if (!stack.isEmpty()) {
             graphics.renderItem(stack, x + indent + 9, y);
         }
-        String label = treeNodeText(node);
-        graphics.drawString(font, truncate(Component.literal(label), Math.max(40, leftPos + LIST_X + LIST_WIDTH - x - indent - 29)),
-                x + indent + 28, y + 4, MUTED, false);
+        drawTreeNodeText(graphics, x + indent + 28, y + 4, node, Math.max(40, leftPos + LIST_X + LIST_WIDTH - x - indent - 29));
         return y + TREE_ROW_HEIGHT;
     }
 
@@ -740,8 +763,8 @@ public class SmartClipboardScreen extends Screen {
     private void renderStockKeeperPanel(GuiGraphics graphics) {
         graphics.blit(STOCK_KEEPER_TEXTURE, leftPos, topPos, 0, 0, IMAGE_WIDTH, HEADER_HEIGHT);
         graphics.blit(STOCK_KEEPER_TEXTURE, leftPos + 31, topPos + 17, 31, 48, 194, 18);
-        for (int y = topPos + HEADER_HEIGHT; y < topPos + IMAGE_HEIGHT - BOTTOM_HEIGHT; y += BODY_HEIGHT) {
-            int height = Math.min(BODY_HEIGHT, topPos + IMAGE_HEIGHT - BOTTOM_HEIGHT - y);
+        for (int y = topPos + HEADER_HEIGHT; y < topPos + IMAGE_HEIGHT - BOTTOM_HEIGHT - BODY_HEIGHT; y += BODY_HEIGHT) {
+            int height = Math.min(BODY_HEIGHT, topPos + IMAGE_HEIGHT - BOTTOM_HEIGHT - BODY_HEIGHT - y);
             graphics.blit(STOCK_KEEPER_TEXTURE, leftPos, y, 0, 48, IMAGE_WIDTH, height);
         }
         graphics.blit(STOCK_KEEPER_TEXTURE, leftPos, topPos + IMAGE_HEIGHT - BOTTOM_HEIGHT, 0, 140, IMAGE_WIDTH, BOTTOM_HEIGHT);
@@ -1504,7 +1527,7 @@ public class SmartClipboardScreen extends Screen {
         }
 
         private static int neededValueColor(int missing) {
-            return missing > 0 ? RESOURCE_SCROLL_SOFT_RED : MUTED;
+            return missing > 0 ? RESOURCE_SCROLL_SOFT_RED : MUTED_TEXT;
         }
 
         private static int suppliedColor(int available, int required) {
