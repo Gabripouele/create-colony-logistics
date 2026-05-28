@@ -88,7 +88,7 @@ public class SmartClipboardScreen extends Screen {
     private static final int IMPORTANT_TOGGLE_WIDTH = 8;
     private static final int IMPORTANT_TOGGLE_HEIGHT = 9;
     private static final int IMPORTANT_TOGGLE_HITBOX_PADDING = 3;
-    private static final float IMPORTANT_TOGGLE_GREEN_ALPHA = 0.50f;
+    private static final float IMPORTANT_TOGGLE_GREEN_ALPHA = 0.25f;
     private static final int TREE_INDENT = 8;
     private static final int TREE_ROW_HEIGHT = 18;
     private static final int RESOURCE_ROW_HEIGHT = 36;
@@ -249,11 +249,13 @@ public class SmartClipboardScreen extends Screen {
     private void renderImportantToggle(GuiGraphics graphics, int mouseX, int mouseY) {
         if (!importantOnly) {
             try {
-                RenderSystem.setShaderColor(1.0f, 1.0f, 1.0f, IMPORTANT_TOGGLE_GREEN_ALPHA);
+                RenderSystem.enableBlend();
+                RenderSystem.defaultBlendFunc();
+                graphics.setColor(1.0f, 1.0f, 1.0f, IMPORTANT_TOGGLE_GREEN_ALPHA);
                 graphics.blit(IMPORTANT_TOGGLE_OVERLAY, leftPos + IMPORTANT_TOGGLE_X, topPos + IMPORTANT_TOGGLE_Y,
                         IMPORTANT_TOGGLE_X, IMPORTANT_TOGGLE_Y, IMPORTANT_TOGGLE_WIDTH, IMPORTANT_TOGGLE_HEIGHT);
             } finally {
-                RenderSystem.setShaderColor(1.0f, 1.0f, 1.0f, 1.0f);
+                graphics.setColor(1.0f, 1.0f, 1.0f, 1.0f);
             }
         }
         if (importantToggleHit(mouseX, mouseY)) {
