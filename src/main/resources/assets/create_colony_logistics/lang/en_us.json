@@ -62,6 +62,7 @@
   "screen.create_colony_logistics.smart_clipboard.scroll_empty": "No Resource Scroll selected.",
   "screen.create_colony_logistics.smart_clipboard.scroll_insert_hint": "Click an empty slot to store one from inventory.",
   "screen.create_colony_logistics.smart_clipboard.scroll_slot_empty": "Click to insert a Resource Scroll",
+  "screen.create_colony_logistics.smart_clipboard.all_scrolls_listed": "All available scrolls are already listed.",
   "screen.create_colony_logistics.smart_clipboard.no_scroll": "Insert a Resource Scroll below.",
   "screen.create_colony_logistics.smart_clipboard.required_resources": "Required Resources",
   "screen.create_colony_logistics.smart_clipboard.scroll_unregistered": "This Resource Scroll is not linked to a builder.",

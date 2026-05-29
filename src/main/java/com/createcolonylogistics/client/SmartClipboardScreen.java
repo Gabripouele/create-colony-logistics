@@ -123,6 +123,7 @@ public class SmartClipboardScreen extends Screen {
     private static final int SCROLL_SLOT_COLUMNS = 9;
     private static final int CANCEL_ACTION_WIDTH = 42;
     private static final int CANCEL_ACTION_PADDING = 4;
+    private static final int CANCEL_ACTION_HEIGHT = 13;
     private static final int CANCEL_TEXT = 0xFF6C5948;
     private static final int CANCEL_HOVER_TEXT = 0xFF7A6654;
     private static final int CANCEL_OUTLINE = 0xFFB9A68D;
@@ -466,18 +467,18 @@ public class SmartClipboardScreen extends Screen {
     private void renderCancelAction(GuiGraphics graphics, SmartClipboardReport.Entry entry, int rowX, int rowY, int rowWidth, double mouseX, double mouseY) {
         Component label = Component.literal("Cancel");
         int labelWidth = font.width(label);
-        int labelX = cancelActionX(rowX, rowWidth, labelWidth);
+        int buttonX = cancelActionX(rowX, rowWidth);
+        int buttonY = cancelActionY(rowY);
+        int labelX = buttonX + Math.max(0, (cancelActionWidth() - labelWidth) / 2);
         int labelY = rowY + 3;
         boolean hovered = cancelActionHit(entry, mouseX, mouseY, rowX, rowY, rowWidth);
-        drawOutlinedText(graphics, label, labelX, labelY, hovered ? CANCEL_HOVER_TEXT : CANCEL_TEXT, CANCEL_OUTLINE);
-    }
-
-    private void drawOutlinedText(GuiGraphics graphics, Component text, int x, int y, int color, int outlineColor) {
-        graphics.drawString(font, text, x - 1, y, outlineColor, false);
-        graphics.drawString(font, text, x + 1, y, outlineColor, false);
-        graphics.drawString(font, text, x, y - 1, outlineColor, false);
-        graphics.drawString(font, text, x, y + 1, outlineColor, false);
-        graphics.drawString(font, text, x, y, color, false);
+        int borderColor = hovered ? CANCEL_HOVER_TEXT : CANCEL_OUTLINE;
+        int buttonWidth = cancelActionWidth();
+        graphics.fill(buttonX, buttonY, buttonX + buttonWidth, buttonY + 1, borderColor);
+        graphics.fill(buttonX, buttonY + CANCEL_ACTION_HEIGHT - 1, buttonX + buttonWidth, buttonY + CANCEL_ACTION_HEIGHT, borderColor);
+        graphics.fill(buttonX, buttonY, buttonX + 1, buttonY + CANCEL_ACTION_HEIGHT, borderColor);
+        graphics.fill(buttonX + buttonWidth - 1, buttonY, buttonX + buttonWidth, buttonY + CANCEL_ACTION_HEIGHT, borderColor);
+        graphics.drawString(font, label, labelX, labelY, hovered ? CANCEL_HOVER_TEXT : CANCEL_TEXT, false);
     }
 
     private int value(GuiGraphics graphics, int x, int y, String key, String value) {
@@ -732,12 +733,13 @@ public class SmartClipboardScreen extends Screen {
                 if (stack.isEmpty()) {
                     ItemStack carriedScroll = firstInventoryResourceScrollStack();
                     if (carriedScroll.isEmpty()) {
+                        showClientMessage(Component.translatable("screen.create_colony_logistics.smart_clipboard.all_scrolls_listed"));
                         return true;
                     }
                     activeTab = Tab.SCROLLS;
                     selectedScroll = i;
                     rememberState();
-                    playUiSound(SoundEvents.NOTE_BLOCK_CHIME, 0.35f, 1.35f);
+                    playUiSound(SoundEvents.BUNDLE_INSERT, 0.25f, 1.00f);
                     PacketDistributor.sendToServer(new ServerboundSmartClipboardScrollPacket(
                             ServerboundSmartClipboardScrollPacket.INSERT,
                             i,
@@ -750,7 +752,7 @@ public class SmartClipboardScreen extends Screen {
                     activeTab = Tab.SCROLLS;
                     selectedScroll = nearestSelectedAfterRemoval(i);
                     rememberState();
-                    playUiSound(SoundEvents.NOTE_BLOCK_CHIME, 0.30f, 0.75f);
+                    playUiSound(SoundEvents.BUNDLE_REMOVE_ONE, 0.25f, 1.00f);
                     PacketDistributor.sendToServer(new ServerboundSmartClipboardScrollPacket(
                             ServerboundSmartClipboardScrollPacket.REMOVE,
                             i,
@@ -941,9 +943,13 @@ public class SmartClipboardScreen extends Screen {
     }
 
     private void showScrollDebugMessage(String message) {
+        showClientMessage(Component.literal(message));
+    }
+
+    private void showClientMessage(Component message) {
         Minecraft minecraft = Minecraft.getInstance();
         if (minecraft.player != null) {
-            minecraft.player.displayClientMessage(Component.literal(message), false);
+            minecraft.player.displayClientMessage(message, false);
         }
     }
 
@@ -1521,16 +1527,25 @@ public class SmartClipboardScreen extends Screen {
             return false;
         }
 
-        int labelWidth = font.width("Cancel");
-        int labelX = cancelActionX(rowX, rowWidth, labelWidth);
-        return mouseX >= labelX - CANCEL_ACTION_PADDING
-                && mouseX < labelX + labelWidth + CANCEL_ACTION_PADDING
-                && mouseY >= rowY
-                && mouseY < rowY + 14;
+        int buttonX = cancelActionX(rowX, rowWidth);
+        int buttonY = cancelActionY(rowY);
+        int buttonWidth = cancelActionWidth();
+        return mouseX >= buttonX
+                && mouseX < buttonX + buttonWidth
+                && mouseY >= buttonY
+                && mouseY < buttonY + CANCEL_ACTION_HEIGHT;
     }
 
-    private int cancelActionX(int rowX, int rowWidth, int labelWidth) {
-        return rowX + rowWidth - CANCEL_ACTION_PADDING - labelWidth;
+    private int cancelActionX(int rowX, int rowWidth) {
+        return rowX + rowWidth - CANCEL_ACTION_PADDING - cancelActionWidth();
+    }
+
+    private int cancelActionY(int rowY) {
+        return rowY + 1;
+    }
+
+    private int cancelActionWidth() {
+        return CANCEL_ACTION_WIDTH - (CANCEL_ACTION_PADDING * 2);
     }
 
     private List<Integer> filteredEntryIndexes() {
