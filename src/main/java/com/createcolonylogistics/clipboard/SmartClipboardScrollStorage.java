@@ -60,33 +60,29 @@ public final class SmartClipboardScrollStorage {
                 return insertResourceScroll(player, clipboard, i, ScrollLinkSnapshot.EMPTY);
             }
         }
-        return MutationResult.rejected(-1, -1, "storage full");
+        return MutationResult.rejected(-1, "storage full");
     }
 
     public static MutationResult insertResourceScroll(ServerPlayer player, ItemStack clipboard, int slot, ScrollLinkSnapshot scrollSnapshot) {
         if (slot < 0 || slot >= SLOT_COUNT) {
-            return MutationResult.rejected(slot, -1, "invalid slot");
+            return MutationResult.rejected(slot, "invalid slot");
         }
         List<ItemStack> scrolls = read(clipboard);
         if (!scrolls.get(slot).isEmpty()) {
-            return MutationResult.rejected(slot, -1, "requested slot occupied");
+            return MutationResult.rejected(slot, "requested slot occupied");
         }
 
-        int matchedSlot = -1;
         ItemStack matchedStack = ItemStack.EMPTY;
         for (int i = 0; i < player.getInventory().getContainerSize(); i++) {
             ItemStack stack = player.getInventory().getItem(i);
             if (matchesSnapshot(stack, scrollSnapshot)) {
-                if (matchedSlot >= 0) {
-                    return MutationResult.rejected(slot, -1, "ambiguous matching Resource Scroll");
-                }
-                matchedSlot = i;
                 matchedStack = stack;
+                break;
             }
         }
 
         if (matchedStack.isEmpty()) {
-            return MutationResult.rejected(slot, -1, "matching Resource Scroll not found");
+            return MutationResult.rejected(slot, "matching Resource Scroll not found");
         }
 
         // Store only the MineColonies link components needed by the scroll UI. Copying arbitrary client
@@ -96,7 +92,7 @@ public final class SmartClipboardScrollStorage {
         scrolls.set(slot, stored);
         write(clipboard, scrolls);
         player.getInventory().setChanged();
-        return MutationResult.inserted(slot, matchedSlot, ScrollLinkSnapshot.from(stored));
+        return MutationResult.inserted(slot, ScrollLinkSnapshot.from(stored));
     }
 
     private static boolean matchesSnapshot(ItemStack stack, ScrollLinkSnapshot snapshot) {
@@ -133,16 +129,16 @@ public final class SmartClipboardScrollStorage {
 
     public static MutationResult removeResourceScroll(ServerPlayer player, ItemStack clipboard, int slot) {
         if (slot < 0 || slot >= SLOT_COUNT) {
-            return MutationResult.rejected(slot, -1, "invalid slot");
+            return MutationResult.rejected(slot, "invalid slot");
         }
         List<ItemStack> scrolls = read(clipboard);
         ItemStack stored = scrolls.get(slot);
         if (!isResourceScroll(stored)) {
-            return MutationResult.rejected(slot, -1, "slot empty");
+            return MutationResult.rejected(slot, "slot empty");
         }
         ItemStack returning = stored.copyWithCount(1);
         if (!player.getInventory().add(returning)) {
-            return MutationResult.rejected(slot, -1, "inventory full");
+            return MutationResult.rejected(slot, "inventory full");
         }
         scrolls.set(slot, ItemStack.EMPTY);
         write(clipboard, scrolls);
@@ -179,18 +175,18 @@ public final class SmartClipboardScrollStorage {
         }
     }
 
-    public record MutationResult(boolean changed, int requestedSlot, int actualSlot, int matchedInventorySlot, boolean ambiguousMatch,
+    public record MutationResult(boolean changed, int requestedSlot, int actualSlot,
                                  String rejectedReason, ScrollLinkSnapshot matchedSnapshot) {
-        public static MutationResult inserted(int slot, int matchedInventorySlot, ScrollLinkSnapshot matchedSnapshot) {
-            return new MutationResult(true, slot, slot, matchedInventorySlot, false, "", matchedSnapshot);
+        public static MutationResult inserted(int slot, ScrollLinkSnapshot matchedSnapshot) {
+            return new MutationResult(true, slot, slot, "", matchedSnapshot);
         }
 
         public static MutationResult removed(int slot) {
-            return new MutationResult(true, slot, slot, -1, false, "", ScrollLinkSnapshot.EMPTY);
+            return new MutationResult(true, slot, slot, "", ScrollLinkSnapshot.EMPTY);
         }
 
-        public static MutationResult rejected(int requestedSlot, int matchedInventorySlot, String reason) {
-            return new MutationResult(false, requestedSlot, -1, matchedInventorySlot, reason != null && reason.contains("ambiguous"), reason, ScrollLinkSnapshot.EMPTY);
+        public static MutationResult rejected(int requestedSlot, String reason) {
+            return new MutationResult(false, requestedSlot, -1, reason, ScrollLinkSnapshot.EMPTY);
         }
     }
 }

@@ -54,9 +54,14 @@ public record ServerboundSmartClipboardScrollPacket(int action, int slot, Scroll
                 return;
             }
 
-            MutationResult result = packet.action() == INSERT
-                    ? SmartClipboardScrollStorage.insertResourceScroll(player, clipboard.get(), packet.slot(), packet.scrollSnapshot())
-                    : SmartClipboardScrollStorage.removeResourceScroll(player, clipboard.get(), packet.slot());
+            MutationResult result;
+            if (packet.action() == INSERT) {
+                result = SmartClipboardScrollStorage.insertResourceScroll(player, clipboard.get(), packet.slot(), packet.scrollSnapshot());
+            } else if (packet.action() == REMOVE) {
+                result = SmartClipboardScrollStorage.removeResourceScroll(player, clipboard.get(), packet.slot());
+            } else {
+                result = MutationResult.rejected(packet.slot(), "invalid scroll action");
+            }
             if (!result.changed()) {
                 player.sendSystemMessage(net.minecraft.network.chat.Component.literal(result.rejectedReason()));
                 return;
