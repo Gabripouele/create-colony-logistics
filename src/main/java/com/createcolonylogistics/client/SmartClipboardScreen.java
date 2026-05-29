@@ -14,8 +14,10 @@ import com.createcolonylogistics.network.ServerboundSmartScrollDebugPacket;
 import com.minecolonies.api.colony.IColonyView;
 import com.minecolonies.api.colony.buildings.views.IBuildingView;
 import com.minecolonies.api.colony.requestsystem.request.IRequest;
+import com.minecolonies.api.colony.requestsystem.request.RequestState;
 import com.minecolonies.api.colony.requestsystem.requestable.deliveryman.Delivery;
 import com.minecolonies.api.colony.requestsystem.token.IToken;
+import com.minecolonies.api.colony.requestsystem.token.StandardToken;
 import com.minecolonies.api.items.component.BuildingId;
 import com.minecolonies.api.items.component.ColonyId;
 import com.minecolonies.api.items.component.WarehouseSnapshot;
@@ -32,9 +34,13 @@ import net.minecraft.client.Minecraft;
 import net.minecraft.client.gui.GuiGraphics;
 import net.minecraft.client.gui.components.Renderable;
 import net.minecraft.client.gui.screens.Screen;
+import net.minecraft.client.resources.sounds.SimpleSoundInstance;
+import net.minecraft.core.Holder;
 import net.minecraft.core.registries.BuiltInRegistries;
 import net.minecraft.network.chat.Component;
 import net.minecraft.resources.ResourceLocation;
+import net.minecraft.sounds.SoundEvent;
+import net.minecraft.sounds.SoundEvents;
 import net.minecraft.world.item.Item;
 import net.minecraft.world.item.ItemStack;
 import net.minecraft.world.item.TooltipFlag;
@@ -49,6 +55,9 @@ import java.util.Locale;
 import java.util.Map;
 import java.util.Optional;
 import java.util.Set;
+import java.util.UUID;
+import java.util.regex.Matcher;
+import java.util.regex.Pattern;
 
 public class SmartClipboardScreen extends Screen {
     private static final ResourceLocation STOCK_KEEPER_TEXTURE = ResourceLocation.fromNamespaceAndPath(CreateColonyLogistics.MOD_ID, "textures/gui/smart_clipboard_gui.png");
@@ -117,6 +126,7 @@ public class SmartClipboardScreen extends Screen {
     private static final int CANCEL_TEXT = 0xFF6C5948;
     private static final int CANCEL_HOVER_TEXT = 0xFF7A6654;
     private static final int CANCEL_OUTLINE = 0xFFB9A68D;
+    private static final Pattern STANDARD_TOKEN_PATTERN = Pattern.compile("^StandardToken\\{id=([^}]+)}$");
     private final SmartClipboardReport report;
     private final Set<Integer> expanded = new HashSet<>();
     private final Set<String> expandedDependencies = new HashSet<>();
@@ -565,6 +575,7 @@ public class SmartClipboardScreen extends Screen {
         if (importantToggleHit(mouseX, mouseY)) {
             importantOnly = !importantOnly;
             scroll = 0;
+            playUiSound(SoundEvents.UI_BUTTON_CLICK, 0.30f, 1.00f);
             PacketDistributor.sendToServer(new ServerboundSmartClipboardFilterPacket(importantOnly));
             return true;
         }
@@ -610,10 +621,52 @@ public class SmartClipboardScreen extends Screen {
         if (requestToken.isEmpty() || pendingCancelledRequestTokens.contains(requestToken.get())) {
             return true;
         }
+        if (!hasCancellableClientRequest(requestToken.get())) {
+            return true;
+        }
 
         pendingCancelledRequestTokens.add(requestToken.get());
+        playUiSound(SoundEvents.UI_BUTTON_CLICK, 0.25f, 0.75f);
         PacketDistributor.sendToServer(new ServerboundSmartClipboardCancelPacket(requestToken.get()));
         return true;
+    }
+
+    private boolean hasCancellableClientRequest(String requestToken) {
+        try {
+            IColonyView colony = currentClientColonyView();
+            Optional<IToken<?>> token = tokenFromReportValue(requestToken);
+            if (colony == null || token.isEmpty()) {
+                return false;
+            }
+            IRequest<?> request = colony.getRequestManager().getRequestForToken(token.get());
+            return request != null && !request.hasParent() && isActiveRequestState(request.getState());
+        } catch (RuntimeException exception) {
+            return false;
+        }
+    }
+
+    private IColonyView currentClientColonyView() {
+        Minecraft minecraft = Minecraft.getInstance();
+        if (minecraft.level == null) {
+            return null;
+        }
+        return com.minecolonies.api.IMinecoloniesAPI.getInstance().getColonyManager().getColonyView(report.colonyId(), minecraft.level.dimension());
+    }
+
+    private Optional<IToken<?>> tokenFromReportValue(String value) {
+        if (value == null || value.isBlank()) {
+            return Optional.empty();
+        }
+        String trimmed = value.strip();
+        Matcher matcher = STANDARD_TOKEN_PATTERN.matcher(trimmed);
+        if (matcher.matches()) {
+            trimmed = matcher.group(1);
+        }
+        try {
+            return Optional.of(new StandardToken(UUID.fromString(trimmed)));
+        } catch (IllegalArgumentException exception) {
+            return Optional.empty();
+        }
     }
 
     private boolean scrollDebugHit(double mouseX, double mouseY) {
@@ -625,12 +678,18 @@ public class SmartClipboardScreen extends Screen {
 
     private boolean handleTabClick(double mouseX, double mouseY) {
         if (tabHit(mouseX, mouseY, tabX(Tab.REQUESTS), tabY())) {
+            if (activeTab != Tab.REQUESTS) {
+                playUiSound(SoundEvents.BOOK_PAGE_TURN, 0.35f, 1.10f);
+            }
             activeTab = Tab.REQUESTS;
             rememberState();
             scroll = 0;
             return true;
         }
         if (tabHit(mouseX, mouseY, tabX(Tab.SCROLLS), tabY())) {
+            if (activeTab != Tab.SCROLLS) {
+                playUiSound(SoundEvents.BOOK_PAGE_TURN, 0.35f, 1.10f);
+            }
             activeTab = Tab.SCROLLS;
             rememberState();
             scroll = 0;
@@ -671,18 +730,27 @@ public class SmartClipboardScreen extends Screen {
             if (mouseX >= slotX && mouseX < slotX + 18 && mouseY >= slotY && mouseY < slotY + 18) {
                 ItemStack stack = i < report.resourceScrolls().size() ? report.resourceScrolls().get(i) : ItemStack.EMPTY;
                 if (stack.isEmpty()) {
+                    ItemStack carriedScroll = firstInventoryResourceScrollStack();
+                    if (carriedScroll.isEmpty()) {
+                        return true;
+                    }
                     activeTab = Tab.SCROLLS;
                     selectedScroll = i;
                     rememberState();
+                    playUiSound(SoundEvents.NOTE_BLOCK_CHIME, 0.35f, 1.35f);
                     PacketDistributor.sendToServer(new ServerboundSmartClipboardScrollPacket(
                             ServerboundSmartClipboardScrollPacket.INSERT,
                             i,
-                            firstInventoryResourceScroll()
+                            ScrollLinkSnapshot.from(carriedScroll)
                     ));
                 } else if (button == 1 || Screen.hasShiftDown()) {
+                    if (!hasSpaceForReturnedScroll(stack)) {
+                        return true;
+                    }
                     activeTab = Tab.SCROLLS;
                     selectedScroll = nearestSelectedAfterRemoval(i);
                     rememberState();
+                    playUiSound(SoundEvents.NOTE_BLOCK_CHIME, 0.30f, 0.75f);
                     PacketDistributor.sendToServer(new ServerboundSmartClipboardScrollPacket(
                             ServerboundSmartClipboardScrollPacket.REMOVE,
                             i,
@@ -895,6 +963,44 @@ public class SmartClipboardScreen extends Screen {
             }
         }
         return ItemStack.EMPTY;
+    }
+
+    private boolean hasSpaceForReturnedScroll(ItemStack returnedScroll) {
+        Minecraft minecraft = Minecraft.getInstance();
+        if (minecraft.player == null || returnedScroll.isEmpty()) {
+            return false;
+        }
+        for (int i = 0; i < minecraft.player.getInventory().getContainerSize(); i++) {
+            ItemStack stack = minecraft.player.getInventory().getItem(i);
+            if (stack.isEmpty()) {
+                return true;
+            }
+            if (ItemStack.isSameItemSameComponents(stack, returnedScroll) && stack.getCount() < stack.getMaxStackSize()) {
+                return true;
+            }
+        }
+        return false;
+    }
+
+    private static boolean isActiveRequestState(RequestState state) {
+        return state != RequestState.RESOLVED
+                && state != RequestState.COMPLETED
+                && state != RequestState.OVERRULED
+                && state != RequestState.CANCELLED
+                && state != RequestState.RECEIVED
+                && state != RequestState.FAILED;
+    }
+
+    private void playUiSound(Holder<SoundEvent> sound, float volume, float pitch) {
+        playUiSound(sound.value(), volume, pitch);
+    }
+
+    private void playUiSound(SoundEvent sound, float volume, float pitch) {
+        Minecraft minecraft = Minecraft.getInstance();
+        if (minecraft == null || minecraft.getSoundManager() == null) {
+            return;
+        }
+        minecraft.getSoundManager().play(SimpleSoundInstance.forUI(sound, pitch, volume));
     }
 
     @Override
