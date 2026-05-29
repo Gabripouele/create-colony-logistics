@@ -15,14 +15,19 @@ public record SmartClipboardReport(
         int buildingCount,
         int activeRequestCount,
         boolean capped,
+        boolean importantOnly,
         List<ItemStack> resourceScrolls,
         List<Entry> entries
 ) {
     public static SmartClipboardReport fromAnalysis(RequestAnalysisService.AnalysisResult result) {
-        return fromAnalysis(result, List.of());
+        return fromAnalysis(result, List.of(), false);
     }
 
     public static SmartClipboardReport fromAnalysis(RequestAnalysisService.AnalysisResult result, List<ItemStack> resourceScrolls) {
+        return fromAnalysis(result, resourceScrolls, false);
+    }
+
+    public static SmartClipboardReport fromAnalysis(RequestAnalysisService.AnalysisResult result, List<ItemStack> resourceScrolls, boolean importantOnly) {
         List<Entry> entries = new ArrayList<>();
         result.groupedEntries().values().forEach(group -> group.forEach(entry -> entries.add(new Entry(
                 entry.requestedStack().copy(),
@@ -56,6 +61,7 @@ public record SmartClipboardReport(
                 result.buildingCount(),
                 result.activeRequestCount(),
                 result.capped(),
+                importantOnly,
                 resourceScrolls.stream().map(ItemStack::copy).toList(),
                 entries
         );
@@ -67,6 +73,7 @@ public record SmartClipboardReport(
         int buildingCount = buffer.readVarInt();
         int activeRequestCount = buffer.readVarInt();
         boolean capped = buffer.readBoolean();
+        boolean importantOnly = buffer.readBoolean();
         int scrollCount = buffer.readVarInt();
         List<ItemStack> resourceScrolls = new ArrayList<>(scrollCount);
         for (int i = 0; i < scrollCount; i++) {
@@ -77,7 +84,7 @@ public record SmartClipboardReport(
         for (int i = 0; i < entryCount; i++) {
             entries.add(Entry.decode(buffer));
         }
-        return new SmartClipboardReport(colonyName, colonyId, buildingCount, activeRequestCount, capped, resourceScrolls, entries);
+        return new SmartClipboardReport(colonyName, colonyId, buildingCount, activeRequestCount, capped, importantOnly, resourceScrolls, entries);
     }
 
     public void encode(RegistryFriendlyByteBuf buffer) {
@@ -86,6 +93,7 @@ public record SmartClipboardReport(
         buffer.writeVarInt(buildingCount);
         buffer.writeVarInt(activeRequestCount);
         buffer.writeBoolean(capped);
+        buffer.writeBoolean(importantOnly);
         buffer.writeVarInt(resourceScrolls.size());
         for (ItemStack scroll : resourceScrolls) {
             ItemStack.OPTIONAL_STREAM_CODEC.encode(buffer, scroll);

@@ -3,6 +3,7 @@ package com.createcolonylogistics.network;
 import com.createcolonylogistics.CreateColonyLogistics;
 import com.createcolonylogistics.clipboard.ColonyContextResolver;
 import com.createcolonylogistics.clipboard.RequestAnalysisService;
+import com.createcolonylogistics.clipboard.SmartClipboardFilterState;
 import com.createcolonylogistics.clipboard.SmartClipboardReport;
 import com.createcolonylogistics.clipboard.SmartClipboardScrollStorage;
 import com.createcolonylogistics.clipboard.SmartClipboardScrollStorage.MutationResult;
@@ -63,11 +64,12 @@ public record ServerboundSmartClipboardScrollPacket(int action, int slot, Scroll
 
             SmartClipboardReport report;
             Optional<IColony> colony = ColonyContextResolver.resolveLinkedClipboard(clipboard.get());
+            boolean importantOnly = SmartClipboardFilterState.isImportantOnly(clipboard.get());
             if (colony.isPresent()) {
                 RequestAnalysisService.AnalysisResult analysis = RequestAnalysisService.analyze(player.serverLevel(), colony.get(), 250);
-                report = SmartClipboardReport.fromAnalysis(analysis, SmartClipboardScrollStorage.read(clipboard.get()));
+                report = SmartClipboardReport.fromAnalysis(analysis, SmartClipboardScrollStorage.read(clipboard.get()), importantOnly);
             } else {
-                report = new SmartClipboardReport("", 0, 0, 0, false, SmartClipboardScrollStorage.read(clipboard.get()), java.util.List.of());
+                report = new SmartClipboardReport("", 0, 0, 0, false, importantOnly, SmartClipboardScrollStorage.read(clipboard.get()), java.util.List.of());
             }
             PacketDistributor.sendToPlayer(player, new ClientboundSmartClipboardReportPacket(report));
         });

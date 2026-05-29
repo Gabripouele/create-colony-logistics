@@ -7,6 +7,7 @@ import com.createcolonylogistics.clipboard.SmartClipboardReport;
 import com.createcolonylogistics.clipboard.SmartClipboardScrollStorage;
 import com.createcolonylogistics.clipboard.SmartClipboardScrollStorage.ScrollLinkSnapshot;
 import com.createcolonylogistics.network.ServerboundSmartClipboardDebugPacket;
+import com.createcolonylogistics.network.ServerboundSmartClipboardFilterPacket;
 import com.createcolonylogistics.network.ServerboundSmartClipboardScrollPacket;
 import com.createcolonylogistics.network.ServerboundSmartScrollDebugPacket;
 import com.minecolonies.api.colony.IColonyView;
@@ -129,6 +130,7 @@ public class SmartClipboardScreen extends Screen {
     public SmartClipboardScreen(SmartClipboardReport report) {
         super(Component.translatable("screen.create_colony_logistics.smart_clipboard.title"));
         this.report = report;
+        this.importantOnly = report.importantOnly();
         this.activeTab = rememberedTab;
         this.selectedScroll = clampSelectedScroll(report, rememberedSelectedScroll);
     }
@@ -536,6 +538,7 @@ public class SmartClipboardScreen extends Screen {
         if (importantToggleHit(mouseX, mouseY)) {
             importantOnly = !importantOnly;
             scroll = 0;
+            PacketDistributor.sendToServer(new ServerboundSmartClipboardFilterPacket(importantOnly));
             return true;
         }
 

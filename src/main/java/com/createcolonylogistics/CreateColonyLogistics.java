@@ -5,6 +5,7 @@ import com.createcolonylogistics.config.ColonyLogisticsConfig;
 import com.createcolonylogistics.cache.ColonyStockCache;
 import com.createcolonylogistics.client.CCLClientEvents;
 import com.createcolonylogistics.network.CCLNetworking;
+import com.createcolonylogistics.registry.CCLDataComponents;
 import com.createcolonylogistics.registry.CCLItems;
 import net.neoforged.bus.api.IEventBus;
 import net.neoforged.api.distmarker.Dist;
@@ -22,6 +23,7 @@ public final class CreateColonyLogistics {
     public static final Logger LOGGER = LogUtils.getLogger();
 
     public CreateColonyLogistics(IEventBus modEventBus, ModContainer modContainer) {
+        CCLDataComponents.register(modEventBus);
         CCLItems.register(modEventBus);
         modEventBus.addListener(CCLItems::addCreativeTabItems);
         modEventBus.addListener(CCLNetworking::registerPayloads);

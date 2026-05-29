@@ -2,6 +2,7 @@ package com.createcolonylogistics.item;
 
 import com.createcolonylogistics.clipboard.ColonyContextResolver;
 import com.createcolonylogistics.clipboard.RequestAnalysisService;
+import com.createcolonylogistics.clipboard.SmartClipboardFilterState;
 import com.createcolonylogistics.clipboard.SmartClipboardReport;
 import com.createcolonylogistics.clipboard.SmartClipboardScrollStorage;
 import com.createcolonylogistics.clipboard.SmartClipboardRecipeTeachingService;
@@ -78,7 +79,7 @@ public class SmartColonyClipboardItem extends Item {
 
         RequestAnalysisService.AnalysisResult result = RequestAnalysisService.analyze(player.serverLevel(), colony.get(), MAX_REPORT_REQUESTS);
         PacketDistributor.sendToPlayer(player, new ClientboundSmartClipboardReportPacket(
-                SmartClipboardReport.fromAnalysis(result, SmartClipboardScrollStorage.read(clipboard))
+                SmartClipboardReport.fromAnalysis(result, SmartClipboardScrollStorage.read(clipboard), SmartClipboardFilterState.isImportantOnly(clipboard))
         ));
     }
 
