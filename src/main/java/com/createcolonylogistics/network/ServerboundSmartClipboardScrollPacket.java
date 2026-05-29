@@ -62,7 +62,7 @@ public record ServerboundSmartClipboardScrollPacket(int action, int slot, Scroll
             }
 
             SmartClipboardReport report;
-            Optional<IColony> colony = ColonyContextResolver.resolve(player, Optional.empty());
+            Optional<IColony> colony = ColonyContextResolver.resolveLinkedClipboard(clipboard.get());
             if (colony.isPresent()) {
                 RequestAnalysisService.AnalysisResult analysis = RequestAnalysisService.analyze(player.serverLevel(), colony.get(), 250);
                 report = SmartClipboardReport.fromAnalysis(analysis, SmartClipboardScrollStorage.read(clipboard.get()));

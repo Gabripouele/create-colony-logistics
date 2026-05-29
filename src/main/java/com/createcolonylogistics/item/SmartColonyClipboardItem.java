@@ -52,7 +52,7 @@ public class SmartColonyClipboardItem extends Item {
                     return InteractionResult.SUCCESS;
                 }
             }
-            runReport(serverPlayer, Optional.of(context.getClickedPos()));
+            runReport(serverPlayer, context.getItemInHand());
             return InteractionResult.SUCCESS;
         }
         return InteractionResult.sidedSuccess(context.getLevel().isClientSide());
@@ -62,21 +62,20 @@ public class SmartColonyClipboardItem extends Item {
     public InteractionResultHolder<ItemStack> use(Level level, Player player, InteractionHand hand) {
         ItemStack stack = player.getItemInHand(hand);
         if (player instanceof ServerPlayer serverPlayer) {
-            runReport(serverPlayer, Optional.empty());
+            runReport(serverPlayer, stack);
             return InteractionResultHolder.success(stack);
         }
         return InteractionResultHolder.sidedSuccess(stack, level.isClientSide());
     }
 
-    private void runReport(ServerPlayer player, Optional<net.minecraft.core.BlockPos> clickedPos) {
-        Optional<IColony> colony = ColonyContextResolver.resolve(player, clickedPos);
+    private void runReport(ServerPlayer player, ItemStack clipboard) {
+        Optional<IColony> colony = ColonyContextResolver.resolveLinkedClipboard(clipboard);
         if (colony.isEmpty()) {
             player.sendSystemMessage(Component.translatable("item.create_colony_logistics.smart_colony_clipboard.no_colony"));
             return;
         }
 
         RequestAnalysisService.AnalysisResult result = RequestAnalysisService.analyze(player.serverLevel(), colony.get(), MAX_REPORT_REQUESTS);
-        ItemStack clipboard = SmartClipboardScrollStorage.findSmartClipboard(player).orElse(ItemStack.EMPTY);
         PacketDistributor.sendToPlayer(player, new ClientboundSmartClipboardReportPacket(
                 SmartClipboardReport.fromAnalysis(result, SmartClipboardScrollStorage.read(clipboard))
         ));
@@ -101,6 +100,8 @@ public class SmartColonyClipboardItem extends Item {
                     throw new SmartClipboardLinkException(exception);
                 }
             });
+            player.sendSystemMessage(Component.translatable("com.minecolonies.coremod.item.clipboard.registered",
+                    IMinecoloniesAPI.getInstance().getColonyManager().getBuilding(context.getLevel(), context.getClickedPos()).getColony().getName()));
         } catch (ReflectiveOperationException | RuntimeException ignored) {
             // Not a MineColonies building tile or no compatible clipboard context writer.
         }
