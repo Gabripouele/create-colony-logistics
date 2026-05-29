@@ -18,10 +18,10 @@ import java.util.HashSet;
 import java.util.Set;
 
 public class SmartColonyClipboardDecorator implements IItemDecorator {
-    private static final int HIGHLIGHT_RGB = 0xB84A3A;
+    private static final int HIGHLIGHT_RGB = 0xD85A48;
     private static final int MIN_ALPHA = 0x59;
     private static final int ALPHA_RANGE = 0x73;
-    private static final int PULSE_PERIOD_TICKS = 80;
+    private static final int PULSE_PERIOD_TICKS = 40;
 
     @Override
     public boolean render(GuiGraphics graphics, Font font, ItemStack stack, int x, int y) {
