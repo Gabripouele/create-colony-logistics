@@ -1,6 +1,7 @@
 {
   "item.create_colony_logistics.smart_colony_clipboard": "Smart Colony Clipboard",
   "item.create_colony_logistics.smart_colony_clipboard.header": "Smart Colony Clipboard: %s",
+  "item.create_colony_logistics.smart_colony_clipboard.linked": "Smart Colony Clipboard now linked to %s.",
   "item.create_colony_logistics.smart_colony_clipboard.no_colony": "No MineColonies colony could be resolved here.",
   "item.create_colony_logistics.smart_colony_clipboard.no_requests": "No active MineColonies requests were found.",
   "item.create_colony_logistics.smart_colony_clipboard.yes": "Yes",

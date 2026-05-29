@@ -101,7 +101,7 @@ public class SmartColonyClipboardItem extends Item {
                     throw new SmartClipboardLinkException(exception);
                 }
             });
-            player.sendSystemMessage(Component.translatable("com.minecolonies.coremod.item.clipboard.registered",
+            player.sendSystemMessage(Component.translatable("item.create_colony_logistics.smart_colony_clipboard.linked",
                     IMinecoloniesAPI.getInstance().getColonyManager().getBuilding(context.getLevel(), context.getClickedPos()).getColony().getName())
                     .withStyle(ChatFormatting.GRAY));
         } catch (ReflectiveOperationException | RuntimeException ignored) {

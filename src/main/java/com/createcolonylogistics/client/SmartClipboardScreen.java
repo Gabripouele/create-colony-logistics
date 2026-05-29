@@ -92,6 +92,9 @@ public class SmartClipboardScreen extends Screen {
     private static final int TREE_ROW_HEIGHT = 18;
     private static final int RESOURCE_ROW_HEIGHT = 36;
     private static final int RESOURCE_SEPARATOR_Y = 33;
+    private static final int NOTIFICATION_HIGHLIGHT_MIN_ALPHA = 0x59;
+    private static final int NOTIFICATION_HIGHLIGHT_ALPHA_RANGE = 0x73;
+    private static final int NOTIFICATION_HIGHLIGHT_PERIOD_TICKS = 80;
     private static final int ROW_GAP = 2;
     private static final int LINE_HEIGHT = 10;
     private static final int COLLAPSED_HEIGHT = 28;
@@ -415,8 +418,12 @@ public class SmartClipboardScreen extends Screen {
     private void renderEntry(GuiGraphics graphics, SmartClipboardReport.Entry entry, int index, int x, int y, int width, int height) {
         graphics.fill(x, y + height - 1, x + width, y + height, DIVIDER_LINE);
         ItemStack shownStack = displayStack(entry);
-        graphics.renderItem(shownStack, x + 2, y + 4);
-        graphics.renderItemDecorations(font, shownStack, x + 2, y + 4);
+        int iconX = x + 2;
+        int iconY = y + 4;
+        graphics.renderItem(shownStack, iconX, iconY);
+        if (shouldHighlightRequestSlot(entry, shownStack)) {
+            drawPulsingInnerSlotHighlight(graphics, iconX, iconY);
+        }
 
         int textX = x + 24;
         drawNameWithQuantity(graphics, textX, y + 3, entry.requestedStack().getHoverName(), entry.quantityDisplay(), width - 28);
@@ -458,6 +465,30 @@ public class SmartClipboardScreen extends Screen {
         graphics.drawString(font, truncate(label, width), x, y, LABEL_TEXT, false);
         int valueX = x + labelWidth;
         graphics.drawString(font, truncate(value, Math.max(10, width - labelWidth)), valueX, y, SECONDARY_TEXT, false);
+    }
+
+    private boolean shouldHighlightRequestSlot(SmartClipboardReport.Entry entry, ItemStack shownStack) {
+        return shownStack.getCount() > 1 || entry.requestedCount() > 1;
+    }
+
+    private void drawPulsingInnerSlotHighlight(GuiGraphics graphics, int x, int y) {
+        int color = (pulsingHighlightAlpha() << 24) | (RESOURCE_SCROLL_SOFT_RED & 0x00FFFFFF);
+        int left = x + 1;
+        int top = y + 1;
+        int right = x + 15;
+        int bottom = y + 15;
+        graphics.fill(left, top, right + 1, top + 1, color);
+        graphics.fill(left, bottom, right + 1, bottom + 1, color);
+        graphics.fill(left, top, left + 1, bottom + 1, color);
+        graphics.fill(right, top, right + 1, bottom + 1, color);
+    }
+
+    private int pulsingHighlightAlpha() {
+        Minecraft minecraft = Minecraft.getInstance();
+        long tick = minecraft.level == null ? System.currentTimeMillis() / 50L : minecraft.level.getGameTime();
+        double phase = (tick % NOTIFICATION_HIGHLIGHT_PERIOD_TICKS) / (double) NOTIFICATION_HIGHLIGHT_PERIOD_TICKS;
+        double wave = (Math.sin(phase * Math.PI * 2.0D) + 1.0D) * 0.5D;
+        return NOTIFICATION_HIGHLIGHT_MIN_ALPHA + (int) Math.round(wave * NOTIFICATION_HIGHLIGHT_ALPHA_RANGE);
     }
 
     private void drawNameWithQuantity(GuiGraphics graphics, int x, int y, Component name, String quantity, int width) {
