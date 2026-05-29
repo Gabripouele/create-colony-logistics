@@ -8,7 +8,6 @@ import com.minecolonies.api.colony.requestsystem.resolver.player.IPlayerRequestR
 import com.minecolonies.api.colony.requestsystem.resolver.retrying.IRetryingRequestResolver;
 import com.minecolonies.api.colony.requestsystem.token.IToken;
 import com.minecolonies.api.items.component.ColonyId;
-import net.minecraft.client.Minecraft;
 import net.minecraft.client.gui.Font;
 import net.minecraft.client.gui.GuiGraphics;
 import net.minecraft.world.item.ItemStack;
@@ -18,18 +17,17 @@ import java.util.HashSet;
 import java.util.Set;
 
 public class SmartColonyClipboardDecorator implements IItemDecorator {
-    private static final int HIGHLIGHT_RGB = 0xF05A4A;
-    private static final int MIN_ALPHA = 0x59;
-    private static final int ALPHA_RANGE = 0x73;
-    private static final int PULSE_PERIOD_TICKS = 40;
+    private static final int COUNT_COLOR = 0xF05A4A;
+    private static final int ICON_SIZE = 16;
 
     @Override
     public boolean render(GuiGraphics graphics, Font font, ItemStack stack, int x, int y) {
-        if (pendingRequestCount(stack) <= 0) {
+        int count = pendingRequestCount(stack);
+        if (count <= 0) {
             return false;
         }
 
-        drawInnerPulse(graphics, x, y);
+        drawCenteredCount(graphics, font, count, x, y);
         return true;
     }
 
@@ -75,27 +73,19 @@ public class SmartColonyClipboardDecorator implements IItemDecorator {
         return asyncRequests;
     }
 
-    private static void drawInnerPulse(GuiGraphics graphics, int x, int y) {
-        int color = (pulseAlpha() << 24) | HIGHLIGHT_RGB;
-        int left = x + 1;
-        int top = y + 1;
-        int right = x + 15;
-        int bottom = y + 15;
+    private static void drawCenteredCount(GuiGraphics graphics, Font font, int count, int x, int y) {
+        String text = Integer.toString(count);
+        int textWidth = font.width(text);
+        float scale = textWidth <= ICON_SIZE ? 1.0F : ICON_SIZE / (float) textWidth;
+        float scaledWidth = textWidth * scale;
+        float scaledHeight = font.lineHeight * scale;
+        float drawX = x + (ICON_SIZE - scaledWidth) / 2.0F;
+        float drawY = y + (ICON_SIZE - scaledHeight) / 2.0F;
 
         graphics.pose().pushPose();
-        graphics.pose().translate(0.0F, 0.0F, 500.0F);
-        graphics.fill(left, top, right + 1, top + 2, color);
-        graphics.fill(left, bottom - 1, right + 1, bottom + 1, color);
-        graphics.fill(left, top, left + 2, bottom + 1, color);
-        graphics.fill(right - 1, top, right + 1, bottom + 1, color);
+        graphics.pose().translate(drawX, drawY, 500.0F);
+        graphics.pose().scale(scale, scale, 1.0F);
+        graphics.drawString(font, text, 0, 0, COUNT_COLOR, true);
         graphics.pose().popPose();
-    }
-
-    private static int pulseAlpha() {
-        Minecraft minecraft = Minecraft.getInstance();
-        long tick = minecraft.level == null ? System.currentTimeMillis() / 50L : minecraft.level.getGameTime();
-        double phase = (tick % PULSE_PERIOD_TICKS) / (double) PULSE_PERIOD_TICKS;
-        double wave = (Math.sin(phase * Math.PI * 2.0D) + 1.0D) * 0.5D;
-        return MIN_ALPHA + (int) Math.round(wave * ALPHA_RANGE);
     }
 }
