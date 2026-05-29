@@ -121,8 +121,9 @@ public class SmartClipboardScreen extends Screen {
     private static final int RESOURCE_SCROLL_SOFT_RED = 0xFFB84A3A;
     private static final int SCROLL_SLOT_SIZE = 20;
     private static final int SCROLL_SLOT_COLUMNS = 9;
-    private static final int CANCEL_ACTION_WIDTH = 42;
+    private static final int CANCEL_ACTION_WIDTH = 46;
     private static final int CANCEL_ACTION_PADDING = 4;
+    private static final int CANCEL_ACTION_HORIZONTAL_PADDING = 5;
     private static final int CANCEL_ACTION_HEIGHT = 13;
     private static final int CANCEL_TEXT = 0xFF6C5948;
     private static final int CANCEL_HOVER_TEXT = 0xFF7A6654;
@@ -467,18 +468,26 @@ public class SmartClipboardScreen extends Screen {
     private void renderCancelAction(GuiGraphics graphics, SmartClipboardReport.Entry entry, int rowX, int rowY, int rowWidth, double mouseX, double mouseY) {
         Component label = Component.literal("Cancel");
         int labelWidth = font.width(label);
-        int buttonX = cancelActionX(rowX, rowWidth);
+        int buttonWidth = cancelActionWidth(labelWidth);
+        int buttonX = cancelActionX(rowX, rowWidth, buttonWidth);
         int buttonY = cancelActionY(rowY);
-        int labelX = buttonX + Math.max(0, (cancelActionWidth() - labelWidth) / 2);
+        int labelX = buttonX + (buttonWidth - labelWidth) / 2;
         int labelY = rowY + 3;
         boolean hovered = cancelActionHit(entry, mouseX, mouseY, rowX, rowY, rowWidth);
         int borderColor = hovered ? CANCEL_HOVER_TEXT : CANCEL_OUTLINE;
-        int buttonWidth = cancelActionWidth();
-        graphics.fill(buttonX, buttonY, buttonX + buttonWidth, buttonY + 1, borderColor);
-        graphics.fill(buttonX, buttonY + CANCEL_ACTION_HEIGHT - 1, buttonX + buttonWidth, buttonY + CANCEL_ACTION_HEIGHT, borderColor);
-        graphics.fill(buttonX, buttonY, buttonX + 1, buttonY + CANCEL_ACTION_HEIGHT, borderColor);
-        graphics.fill(buttonX + buttonWidth - 1, buttonY, buttonX + buttonWidth, buttonY + CANCEL_ACTION_HEIGHT, borderColor);
+        drawCancelBorder(graphics, buttonX, buttonY, buttonWidth, CANCEL_ACTION_HEIGHT, borderColor);
         graphics.drawString(font, label, labelX, labelY, hovered ? CANCEL_HOVER_TEXT : CANCEL_TEXT, false);
+    }
+
+    private void drawCancelBorder(GuiGraphics graphics, int x, int y, int width, int height, int color) {
+        graphics.fill(x + 2, y, x + width - 2, y + 1, color);
+        graphics.fill(x + 2, y + height - 1, x + width - 2, y + height, color);
+        graphics.fill(x, y + 2, x + 1, y + height - 2, color);
+        graphics.fill(x + width - 1, y + 2, x + width, y + height - 2, color);
+        graphics.fill(x + 1, y + 1, x + 2, y + 2, color);
+        graphics.fill(x + width - 2, y + 1, x + width - 1, y + 2, color);
+        graphics.fill(x + 1, y + height - 2, x + 2, y + height - 1, color);
+        graphics.fill(x + width - 2, y + height - 2, x + width - 1, y + height - 1, color);
     }
 
     private int value(GuiGraphics graphics, int x, int y, String key, String value) {
@@ -1527,25 +1536,26 @@ public class SmartClipboardScreen extends Screen {
             return false;
         }
 
-        int buttonX = cancelActionX(rowX, rowWidth);
+        int labelWidth = font.width("Cancel");
+        int buttonWidth = cancelActionWidth(labelWidth);
+        int buttonX = cancelActionX(rowX, rowWidth, buttonWidth);
         int buttonY = cancelActionY(rowY);
-        int buttonWidth = cancelActionWidth();
         return mouseX >= buttonX
                 && mouseX < buttonX + buttonWidth
                 && mouseY >= buttonY
                 && mouseY < buttonY + CANCEL_ACTION_HEIGHT;
     }
 
-    private int cancelActionX(int rowX, int rowWidth) {
-        return rowX + rowWidth - CANCEL_ACTION_PADDING - cancelActionWidth();
+    private int cancelActionX(int rowX, int rowWidth, int buttonWidth) {
+        return rowX + rowWidth - CANCEL_ACTION_PADDING - buttonWidth;
     }
 
     private int cancelActionY(int rowY) {
         return rowY + 1;
     }
 
-    private int cancelActionWidth() {
-        return CANCEL_ACTION_WIDTH - (CANCEL_ACTION_PADDING * 2);
+    private int cancelActionWidth(int labelWidth) {
+        return labelWidth + (CANCEL_ACTION_HORIZONTAL_PADDING * 2);
     }
 
     private List<Integer> filteredEntryIndexes() {
