@@ -14,7 +14,21 @@ public final class SmartClipboardClient {
     }
 
     public static void open(SmartClipboardReport report) {
-        Minecraft.getInstance().setScreen(new SmartClipboardScreen(report));
+        Minecraft minecraft = Minecraft.getInstance();
+        if (minecraft.screen instanceof SmartClipboardScreen screen) {
+            screen.updateReport(report);
+        } else {
+            minecraft.setScreen(new SmartClipboardScreen(report));
+        }
+    }
+
+    public static void applyCancelResult(SmartClipboardReport report, String requestToken, boolean accepted) {
+        Minecraft minecraft = Minecraft.getInstance();
+        if (minecraft.screen instanceof SmartClipboardScreen screen) {
+            screen.applyCancelResult(report, requestToken, accepted);
+        } else {
+            minecraft.setScreen(new SmartClipboardScreen(report));
+        }
     }
 
     static boolean openMineColoniesClipboard() {

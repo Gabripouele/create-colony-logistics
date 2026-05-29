@@ -17,4 +17,14 @@ public final class SmartClipboardClientBridge {
             // Client-only bridge; no-op if invoked in an unexpected environment.
         }
     }
+
+    public static void applyCancelResult(SmartClipboardReport report, String requestToken, boolean accepted) {
+        try {
+            Class<?> client = Class.forName("com.createcolonylogistics.client.SmartClipboardClient");
+            Method method = client.getMethod("applyCancelResult", SmartClipboardReport.class, String.class, boolean.class);
+            method.invoke(null, report, requestToken, accepted);
+        } catch (ReflectiveOperationException | RuntimeException ignored) {
+            // Client-only bridge; no-op if invoked in an unexpected environment.
+        }
+    }
 }

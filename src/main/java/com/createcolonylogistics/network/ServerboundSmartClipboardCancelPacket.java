@@ -56,28 +56,31 @@ public record ServerboundSmartClipboardCancelPacket(String requestToken) impleme
 
             Optional<IColony> colony = ColonyContextResolver.resolveLinkedClipboard(clipboard.get());
             if (colony.isEmpty()) {
-                sendReport(player, clipboard.get(), Optional.empty());
+                sendReport(player, clipboard.get(), Optional.empty(), packet.requestToken(), false);
                 return;
             }
 
-            tokenFromReportValue(packet.requestToken())
-                    .ifPresent(token -> cancelIfValidRootRequest(colony.get(), token));
-            sendReport(player, clipboard.get(), colony);
+            boolean accepted = tokenFromReportValue(packet.requestToken())
+                    .map(token -> cancelIfValidRootRequest(colony.get(), token))
+                    .orElse(false);
+            sendReport(player, clipboard.get(), colony, packet.requestToken(), accepted);
         });
     }
 
-    private static void cancelIfValidRootRequest(IColony colony, IToken<?> token) {
+    private static boolean cancelIfValidRootRequest(IColony colony, IToken<?> token) {
         try {
             IRequest<?> request = colony.getRequestManager().getRequestForToken(token);
             if (request != null && !request.hasParent() && isActiveRequestState(request.getState())) {
                 colony.getRequestManager().updateRequestState(request.getId(), RequestState.CANCELLED);
+                return true;
             }
         } catch (RuntimeException ignored) {
             // The request may have resolved, disappeared, or been cancelled between render and click.
         }
+        return false;
     }
 
-    private static void sendReport(ServerPlayer player, ItemStack clipboard, Optional<IColony> colony) {
+    private static void sendReport(ServerPlayer player, ItemStack clipboard, Optional<IColony> colony, String confirmedCancelledRequestToken, boolean cancelAccepted) {
         boolean importantOnly = SmartClipboardFilterState.isImportantOnly(clipboard);
         SmartClipboardReport report;
         if (colony.isPresent()) {
@@ -86,7 +89,7 @@ public record ServerboundSmartClipboardCancelPacket(String requestToken) impleme
         } else {
             report = new SmartClipboardReport("", 0, 0, 0, false, importantOnly, SmartClipboardScrollStorage.read(clipboard), java.util.List.of());
         }
-        PacketDistributor.sendToPlayer(player, new ClientboundSmartClipboardReportPacket(report));
+        PacketDistributor.sendToPlayer(player, new ClientboundSmartClipboardReportPacket(report, confirmedCancelledRequestToken, cancelAccepted));
     }
 
     private static Optional<IToken<?>> tokenFromReportValue(String value) {

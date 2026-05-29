@@ -129,10 +129,11 @@ public class SmartClipboardScreen extends Screen {
     private static final int CANCEL_HOVER_TEXT = 0xFF7A6654;
     private static final int CANCEL_OUTLINE = 0xFFB9A68D;
     private static final Pattern STANDARD_TOKEN_PATTERN = Pattern.compile("^StandardToken\\{id=([^}]+)}$");
-    private final SmartClipboardReport report;
+    private SmartClipboardReport report;
     private final Set<Integer> expanded = new HashSet<>();
     private final Set<String> expandedDependencies = new HashSet<>();
     private final Set<String> pendingCancelledRequestTokens = new HashSet<>();
+    private final Set<String> cancelRequestsInFlight = new HashSet<>();
     private int leftPos;
     private int topPos;
     private int scroll;
@@ -172,7 +173,7 @@ public class SmartClipboardScreen extends Screen {
         graphics.drawString(font, truncate(Component.literal(displayedColonyName()), LIST_WIDTH), leftPos + LIST_X, topPos + COLONY_LINE_Y, SECONDARY_TEXT, false);
         renderImportantToggle(graphics, mouseX, mouseY);
         if (activeTab == Tab.REQUESTS) {
-            graphics.drawString(font, truncate(Component.translatable("screen.create_colony_logistics.smart_clipboard.summary", report.activeRequestCount(), report.buildingCount()), LIST_WIDTH), leftPos + LIST_X, topPos + SUMMARY_LINE_Y, SECONDARY_TEXT, false);
+            graphics.drawString(font, truncate(Component.translatable("screen.create_colony_logistics.smart_clipboard.summary", displayedActiveRequestCount(), report.buildingCount()), LIST_WIDTH), leftPos + LIST_X, topPos + SUMMARY_LINE_Y, SECONDARY_TEXT, false);
         }
 
         int listTop = listTop();
@@ -439,11 +440,17 @@ public class SmartClipboardScreen extends Screen {
         graphics.renderItemDecorations(font, shownStack, x + 2, y + 4);
 
         int textX = x + 24;
-        int textWidth = entryCancelable(entry) ? width - 28 - CANCEL_ACTION_WIDTH : width - 28;
-        drawNameWithQuantity(graphics, textX, y + 3, entry.requestedStack().getHoverName(), entry.quantityDisplay(), textWidth);
+        int requesterTextWidth = width - 28;
+        int nameTextWidth = requesterTextWidth;
+        if (entryCancelable(entry)) {
+            int buttonWidth = cancelActionWidth(font.width("Cancel"));
+            int buttonX = cancelActionX(x, width, buttonWidth);
+            nameTextWidth = Math.max(10, buttonX - textX - CANCEL_ACTION_PADDING);
+        }
+        drawNameWithQuantity(graphics, textX, y + 3, entry.requestedStack().getHoverName(), entry.quantityDisplay(), nameTextWidth);
         drawLabelValue(graphics, textX, y + 15,
                 Component.translatable("screen.create_colony_logistics.smart_clipboard.requester_label"),
-                Component.literal(displayRequester(entry)), textWidth);
+                Component.literal(displayRequester(entry)), requesterTextWidth);
         if (entryCancelable(entry)) {
             renderCancelAction(graphics, entry, x, y, width, mouseX, mouseY);
         }
@@ -628,14 +635,14 @@ public class SmartClipboardScreen extends Screen {
 
     private boolean cancelEntry(SmartClipboardReport.Entry entry) {
         Optional<String> requestToken = entry.requestToken();
-        if (requestToken.isEmpty() || pendingCancelledRequestTokens.contains(requestToken.get())) {
+        if (requestToken.isEmpty() || pendingCancelledRequestTokens.contains(requestToken.get()) || cancelRequestsInFlight.contains(requestToken.get())) {
             return true;
         }
         if (!hasCancellableClientRequest(requestToken.get())) {
             return true;
         }
 
-        pendingCancelledRequestTokens.add(requestToken.get());
+        cancelRequestsInFlight.add(requestToken.get());
         playUiSound(SoundEvents.UI_BUTTON_CLICK, 0.25f, 0.75f);
         PacketDistributor.sendToServer(new ServerboundSmartClipboardCancelPacket(requestToken.get()));
         return true;
@@ -1246,14 +1253,20 @@ public class SmartClipboardScreen extends Screen {
             SmartClipboardReport.Entry entry = report.entries().get(i);
             int cardHeight = entryHeight(entry, i);
             String itemText = entry.requestedStack().getHoverName().getString() + " " + entry.quantityDisplay();
-            int rowTextWidth = entryCancelable(entry) ? LIST_WIDTH - 28 - CANCEL_ACTION_WIDTH : LIST_WIDTH - 28;
-            if (hoveredTruncatedText(mouseX, mouseY, x + 24, y + 3, rowTextWidth, itemText)) {
+            int requesterTextWidth = LIST_WIDTH - 28;
+            int nameTextWidth = requesterTextWidth;
+            if (entryCancelable(entry)) {
+                int buttonWidth = cancelActionWidth(font.width("Cancel"));
+                int buttonX = cancelActionX(x, LIST_WIDTH, buttonWidth);
+                nameTextWidth = Math.max(10, buttonX - (x + 24) - CANCEL_ACTION_PADDING);
+            }
+            if (hoveredTruncatedText(mouseX, mouseY, x + 24, y + 3, nameTextWidth, itemText)) {
                 graphics.renderTooltip(font, Component.literal(itemText), mouseX, mouseY);
                 return;
             }
 
             String requesterText = Component.translatable("screen.create_colony_logistics.smart_clipboard.requester_label").getString() + displayRequester(entry);
-            if (hoveredTruncatedText(mouseX, mouseY, x + 24, y + 15, rowTextWidth, requesterText)) {
+            if (hoveredTruncatedText(mouseX, mouseY, x + 24, y + 15, requesterTextWidth, requesterText)) {
                 graphics.renderTooltip(font, Component.literal(requesterText), mouseX, mouseY);
                 return;
             }
@@ -1527,7 +1540,7 @@ public class SmartClipboardScreen extends Screen {
     }
 
     private boolean entryCancelable(SmartClipboardReport.Entry entry) {
-        return entry.requestToken().filter(token -> !pendingCancelledRequestTokens.contains(token)).isPresent()
+        return entry.requestToken().filter(token -> !pendingCancelledRequestTokens.contains(token) && !cancelRequestsInFlight.contains(token)).isPresent()
                 && entry.requestTree().stream().anyMatch(node -> node.depth() == 0);
     }
 
@@ -1570,6 +1583,32 @@ public class SmartClipboardScreen extends Screen {
             }
         }
         return indexes;
+    }
+
+    public void updateReport(SmartClipboardReport report) {
+        this.report = report;
+        this.importantOnly = report.importantOnly();
+        selectedScroll = clampSelectedScroll(report, selectedScroll);
+    }
+
+    public void applyCancelResult(SmartClipboardReport report, String requestToken, boolean accepted) {
+        if (requestToken != null && !requestToken.isBlank()) {
+            cancelRequestsInFlight.remove(requestToken);
+            if (accepted) {
+                pendingCancelledRequestTokens.add(requestToken);
+            }
+        }
+        updateReport(report);
+    }
+
+    private int displayedActiveRequestCount() {
+        Set<String> pendingVisible = new HashSet<>();
+        for (SmartClipboardReport.Entry entry : report.entries()) {
+            entry.requestToken()
+                    .filter(pendingCancelledRequestTokens::contains)
+                    .ifPresent(pendingVisible::add);
+        }
+        return Math.max(0, report.activeRequestCount() - pendingVisible.size());
     }
 
     static boolean shouldRenderImportantToggleGreen(boolean importantOnly) {
