@@ -20,7 +20,8 @@ import java.util.Set;
 
 public class SmartColonyClipboardDecorator implements IItemDecorator {
     private static final int COUNT_RGB = 0xFF4500;
-    private static final int ICON_SIZE = 16;
+    private static final int COUNT_X_OFFSET = 15;
+    private static final int COUNT_Y_OFFSET = -2;
     private static final int MIN_ALPHA = 0x59;
     private static final int MAX_ALPHA = 0xFF;
     private static final int ALPHA_RANGE = MAX_ALPHA - MIN_ALPHA;
@@ -84,8 +85,8 @@ public class SmartColonyClipboardDecorator implements IItemDecorator {
 
     private static void drawCenteredCount(GuiGraphics graphics, Font font, int count, int x, int y) {
         String text = Integer.toString(count);
-        int centerX = x + ICON_SIZE / 2;
-        int drawY = y + (ICON_SIZE - font.lineHeight) / 2;
+        int centerX = x + COUNT_X_OFFSET;
+        int drawY = y + COUNT_Y_OFFSET;
 
         graphics.pose().pushPose();
         graphics.pose().translate(0.0F, 0.0F, 500.0F);
