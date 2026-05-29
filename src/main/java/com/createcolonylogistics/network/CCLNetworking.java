@@ -25,5 +25,10 @@ public final class CCLNetworking {
                 ServerboundSmartClipboardFilterPacket.STREAM_CODEC,
                 ServerboundSmartClipboardFilterPacket::handle
         );
+        registrar.playToServer(
+                ServerboundSmartClipboardCancelPacket.TYPE,
+                ServerboundSmartClipboardCancelPacket.STREAM_CODEC,
+                ServerboundSmartClipboardCancelPacket::handle
+        );
     }
 }
