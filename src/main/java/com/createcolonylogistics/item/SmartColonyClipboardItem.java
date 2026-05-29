@@ -6,6 +6,7 @@ import com.createcolonylogistics.clipboard.SmartClipboardReport;
 import com.createcolonylogistics.clipboard.SmartClipboardScrollStorage;
 import com.createcolonylogistics.clipboard.SmartClipboardRecipeTeachingService;
 import com.createcolonylogistics.network.ClientboundSmartClipboardReportPacket;
+import com.createcolonylogistics.registry.CCLItems;
 import com.minecolonies.api.IMinecoloniesAPI;
 import com.minecolonies.api.colony.IColony;
 import com.minecolonies.api.colony.buildings.IBuilding;
@@ -35,10 +36,10 @@ public class SmartColonyClipboardItem extends Item {
     @Override
     public InteractionResult useOn(UseOnContext context) {
         if (context.getPlayer() instanceof ServerPlayer serverPlayer) {
-            preserveMineColoniesClipboardContext(context);
             if (serverPlayer.isShiftKeyDown()) {
                 IBuilding building = IMinecoloniesAPI.getInstance().getColonyManager().getBuilding(context.getLevel(), context.getClickedPos());
                 if (building != null && building.getColony() != null) {
+                    linkMineColoniesClipboardContext(serverPlayer, context.getHand(), context);
                     if (building instanceof ITownHall) {
                         return InteractionResult.SUCCESS;
                     }
@@ -81,7 +82,11 @@ public class SmartColonyClipboardItem extends Item {
         ));
     }
 
-    private void preserveMineColoniesClipboardContext(UseOnContext context) {
+    private void linkMineColoniesClipboardContext(ServerPlayer player, InteractionHand hand, UseOnContext context) {
+        ItemStack usedStack = player.getItemInHand(hand);
+        if (!player.isShiftKeyDown() || usedStack.isEmpty() || !usedStack.is(CCLItems.SMART_COLONY_CLIPBOARD.get())) {
+            return;
+        }
         try {
             Object blockEntity = context.getLevel().getBlockEntity(context.getClickedPos());
             if (blockEntity == null) {
@@ -89,9 +94,21 @@ public class SmartColonyClipboardItem extends Item {
             }
 
             Method writer = blockEntity.getClass().getMethod("writeColonyToItemStack", ItemStack.class);
-            writer.invoke(blockEntity, context.getItemInHand());
+            SmartClipboardColonyLinkGuard.runWithExplicitLink(() -> {
+                try {
+                    writer.invoke(blockEntity, usedStack);
+                } catch (ReflectiveOperationException exception) {
+                    throw new SmartClipboardLinkException(exception);
+                }
+            });
         } catch (ReflectiveOperationException | RuntimeException ignored) {
             // Not a MineColonies building tile or no compatible clipboard context writer.
+        }
+    }
+
+    private static class SmartClipboardLinkException extends RuntimeException {
+        private SmartClipboardLinkException(Throwable cause) {
+            super(cause);
         }
     }
 }

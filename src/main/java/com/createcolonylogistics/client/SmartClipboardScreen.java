@@ -246,7 +246,7 @@ public class SmartClipboardScreen extends Screen {
     }
 
     private void renderImportantToggle(GuiGraphics graphics, int mouseX, int mouseY) {
-        if (!importantOnly) {
+        if (shouldRenderImportantToggleGreen(importantOnly)) {
             try {
                 RenderSystem.enableBlend();
                 RenderSystem.defaultBlendFunc();
@@ -541,10 +541,6 @@ public class SmartClipboardScreen extends Screen {
 
         int listTop = listTop();
         if (activeTab == Tab.SCROLLS) {
-            if (Screen.hasShiftDown() && button != 1 && scrollDebugHit(mouseX, mouseY)) {
-                dumpSelectedScrollDebug();
-                return true;
-            }
             if (handleScrollbarClick(mouseX, mouseY, button)) {
                 return true;
             }
@@ -552,10 +548,6 @@ public class SmartClipboardScreen extends Screen {
         }
         if (handleScrollbarClick(mouseX, mouseY, button)) {
             return true;
-        }
-        if (Screen.hasShiftDown() && scrollDebugHit(mouseX, mouseY)) {
-            CreateColonyLogistics.LOGGER.info("[SmartScrollDebug] ignored: not Scrolls tab activeTab={}", activeTab);
-            showScrollDebugMessage("Smart Scroll debug ignored: not Scrolls tab");
         }
 
         int y = listTop - scroll;
@@ -565,10 +557,6 @@ public class SmartClipboardScreen extends Screen {
             SmartClipboardReport.Entry entry = report.entries().get(i);
             int cardHeight = entryHeight(entry, i);
             if (mouseX >= x && mouseX <= x + LIST_WIDTH && mouseY >= y && mouseY <= y + cardHeight) {
-                if (Screen.hasShiftDown()) {
-                    sendDebugDumpRequest(entry);
-                    return true;
-                }
                 if (expanded.contains(i) && toggleDependencyAt(entry, i, mouseY, y)) {
                     return true;
                 }
@@ -647,11 +635,6 @@ public class SmartClipboardScreen extends Screen {
                             i,
                             firstInventoryResourceScroll()
                     ));
-                } else if (button == 1 && Screen.hasShiftDown()) {
-                    activeTab = Tab.SCROLLS;
-                    selectedScroll = i;
-                    rememberState();
-                    openMineColoniesResourceScrollWindow(i, stack);
                 } else if (button == 1 || Screen.hasShiftDown()) {
                     activeTab = Tab.SCROLLS;
                     selectedScroll = nearestSelectedAfterRemoval(i);
@@ -1380,11 +1363,19 @@ public class SmartClipboardScreen extends Screen {
     private List<Integer> filteredEntryIndexes() {
         List<Integer> indexes = new ArrayList<>();
         for (int i = 0; i < report.entries().size(); i++) {
-            if (!importantOnly || report.entries().get(i).important()) {
+            if (passesImportantFilter(importantOnly, report.entries().get(i).important())) {
                 indexes.add(i);
             }
         }
         return indexes;
+    }
+
+    static boolean shouldRenderImportantToggleGreen(boolean importantOnly) {
+        return !importantOnly;
+    }
+
+    static boolean passesImportantFilter(boolean importantOnly, boolean entryImportant) {
+        return !importantOnly || entryImportant;
     }
 
     private int listTop() {

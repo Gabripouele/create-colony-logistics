@@ -56,7 +56,6 @@ public record ServerboundSmartClipboardScrollPacket(int action, int slot, Scroll
             MutationResult result = packet.action() == INSERT
                     ? SmartClipboardScrollStorage.insertResourceScroll(player, clipboard.get(), packet.slot(), packet.scrollSnapshot())
                     : SmartClipboardScrollStorage.removeResourceScroll(player, clipboard.get(), packet.slot());
-            logMutation(packet, result);
             if (!result.changed()) {
                 player.sendSystemMessage(net.minecraft.network.chat.Component.literal(result.rejectedReason()));
                 return;
@@ -72,26 +71,6 @@ public record ServerboundSmartClipboardScrollPacket(int action, int slot, Scroll
             }
             PacketDistributor.sendToPlayer(player, new ClientboundSmartClipboardReportPacket(report));
         });
-    }
-
-    private static void logMutation(ServerboundSmartClipboardScrollPacket packet, MutationResult result) {
-        if (packet.action() == INSERT) {
-            ScrollLinkSnapshot matched = result.matchedSnapshot();
-            CreateColonyLogistics.LOGGER.info("[SmartScrollDebug] Insert: requestedSlot={} actualInsertedSlot={} matchedInventorySlot={} matchedColonyId={} matchedBuildingId={} ambiguousMatch={} insertRejectedReason='{}'",
-                    result.requestedSlot(),
-                    result.actualSlot(),
-                    result.matchedInventorySlot(),
-                    matched.colonyId().hasColonyId() ? matched.colonyId().id() : "none",
-                    matched.buildingId().hasId() ? matched.buildingId().id() : "none",
-                    result.ambiguousMatch(),
-                    result.rejectedReason());
-        } else {
-            CreateColonyLogistics.LOGGER.info("[SmartScrollDebug] Remove: removedSlot={} inventoryAddSuccess={} storageCleared={} rejectedReason='{}'",
-                    result.requestedSlot(),
-                    result.changed(),
-                    result.changed(),
-                    result.rejectedReason());
-        }
     }
 
     @Override

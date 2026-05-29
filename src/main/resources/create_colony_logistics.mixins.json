@@ -4,7 +4,8 @@
   "package": "com.createcolonylogistics.mixin",
   "compatibilityLevel": "JAVA_21",
   "mixins": [
-    "PackagerBlockEntityMixin"
+    "PackagerBlockEntityMixin",
+    "TileEntityColonyBuildingMixin"
   ],
   "injectors": {
     "defaultRequire": 1
