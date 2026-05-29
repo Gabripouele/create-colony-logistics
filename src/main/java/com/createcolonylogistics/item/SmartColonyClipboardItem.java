@@ -11,6 +11,7 @@ import com.minecolonies.api.IMinecoloniesAPI;
 import com.minecolonies.api.colony.IColony;
 import com.minecolonies.api.colony.buildings.IBuilding;
 import com.minecolonies.api.colony.buildings.workerbuildings.ITownHall;
+import net.minecraft.ChatFormatting;
 import net.minecraft.network.chat.Component;
 import net.minecraft.server.level.ServerPlayer;
 import net.minecraft.world.InteractionHand;
@@ -101,7 +102,8 @@ public class SmartColonyClipboardItem extends Item {
                 }
             });
             player.sendSystemMessage(Component.translatable("com.minecolonies.coremod.item.clipboard.registered",
-                    IMinecoloniesAPI.getInstance().getColonyManager().getBuilding(context.getLevel(), context.getClickedPos()).getColony().getName()));
+                    IMinecoloniesAPI.getInstance().getColonyManager().getBuilding(context.getLevel(), context.getClickedPos()).getColony().getName())
+                    .withStyle(ChatFormatting.GRAY));
         } catch (ReflectiveOperationException | RuntimeException ignored) {
             // Not a MineColonies building tile or no compatible clipboard context writer.
         }
