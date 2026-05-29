@@ -18,7 +18,7 @@ import java.util.HashSet;
 import java.util.Set;
 
 public class SmartColonyClipboardDecorator implements IItemDecorator {
-    private static final int HIGHLIGHT_RGB = 0xD85A48;
+    private static final int HIGHLIGHT_RGB = 0xF05A4A;
     private static final int MIN_ALPHA = 0x59;
     private static final int ALPHA_RANGE = 0x73;
     private static final int PULSE_PERIOD_TICKS = 40;
@@ -84,10 +84,10 @@ public class SmartColonyClipboardDecorator implements IItemDecorator {
 
         graphics.pose().pushPose();
         graphics.pose().translate(0.0F, 0.0F, 500.0F);
-        graphics.fill(left, top, right + 1, top + 1, color);
-        graphics.fill(left, bottom, right + 1, bottom + 1, color);
-        graphics.fill(left, top, left + 1, bottom + 1, color);
-        graphics.fill(right, top, right + 1, bottom + 1, color);
+        graphics.fill(left, top, right + 1, top + 2, color);
+        graphics.fill(left, bottom - 1, right + 1, bottom + 1, color);
+        graphics.fill(left, top, left + 2, bottom + 1, color);
+        graphics.fill(right - 1, top, right + 1, bottom + 1, color);
         graphics.pose().popPose();
     }
 

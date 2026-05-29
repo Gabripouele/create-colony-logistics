@@ -40,8 +40,8 @@ public class SmartColonyClipboardItem extends Item {
             if (serverPlayer.isShiftKeyDown()) {
                 IBuilding building = IMinecoloniesAPI.getInstance().getColonyManager().getBuilding(context.getLevel(), context.getClickedPos());
                 if (building != null && building.getColony() != null) {
-                    linkMineColoniesClipboardContext(serverPlayer, context.getHand(), context);
                     if (building instanceof ITownHall) {
+                        linkMineColoniesClipboardContext(serverPlayer, context.getHand(), context);
                         return InteractionResult.SUCCESS;
                     }
                     SmartClipboardRecipeTeachingService.teachRequestedArchitectsCutterRecipes(
