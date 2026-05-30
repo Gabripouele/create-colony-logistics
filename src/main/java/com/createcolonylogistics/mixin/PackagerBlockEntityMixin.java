@@ -21,6 +21,9 @@ public abstract class PackagerBlockEntityMixin {
     @Shadow(remap = false)
     public InvManipulationBehaviour targetInventory;
 
+    @Unique
+    private boolean create_colony_logistics$returnedCachedSummary;
+
     /**
      * Create uses this method for stock monitoring summaries. MineColonies CombinedItemHandler can be
      * expensive to scan repeatedly, so this short-circuits only read-only summary calls and leaves all
@@ -31,15 +34,22 @@ public abstract class PackagerBlockEntityMixin {
         ServerLevel level = create_colony_logistics$serverLevel();
         IItemHandler handler = create_colony_logistics$targetHandler();
         if (level == null || handler == null) {
+            create_colony_logistics$returnedCachedSummary = false;
             return;
         }
 
         Optional<InventorySummary> cached = ColonyStockCache.INSTANCE.getIfFresh(handler, level);
+        create_colony_logistics$returnedCachedSummary = cached.isPresent();
         cached.ifPresent(cir::setReturnValue);
     }
 
     @Inject(method = "getAvailableItems", at = @At("RETURN"), remap = false)
     private void create_colony_logistics$storeMineColoniesSummary(CallbackInfoReturnable<InventorySummary> cir) {
+        if (create_colony_logistics$returnedCachedSummary) {
+            create_colony_logistics$returnedCachedSummary = false;
+            return;
+        }
+
         ServerLevel level = create_colony_logistics$serverLevel();
         IItemHandler handler = create_colony_logistics$targetHandler();
         if (level != null && handler != null) {

@@ -19,8 +19,8 @@ public final class CachedSummary {
         return sourceSlotCount == slotCount && gameTime - lastBuildGameTime <= ttlTicks;
     }
 
-    InventorySummary summary() {
-        return summary;
+    InventorySummary copySummary() {
+        return CreateInventorySummaryAdapter.safeCopy(summary);
     }
 
     void replace(InventorySummary newSummary, long gameTime, int slotCount) {

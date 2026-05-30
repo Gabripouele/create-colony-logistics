@@ -19,6 +19,7 @@ public final class ColonyStockCache {
     private final ReferenceQueue<IItemHandler> staleHandlers = new ReferenceQueue<>();
     private final Map<WeakIdentityHandlerKey, CachedSummary> cache = new HashMap<>();
     private long lastStatsLogGameTime;
+    private long rawScanCount;
 
     private ColonyStockCache() {
     }
@@ -42,7 +43,7 @@ public final class ColonyStockCache {
             }
 
             cached.recordHit();
-            return Optional.of(CreateInventorySummaryAdapter.safeCopy(cached.summary()));
+            return Optional.of(cached.copySummary());
         } catch (RuntimeException exception) {
             debug("Cache lookup failed, falling back to Create summary scan", exception);
             return Optional.empty();
@@ -56,6 +57,7 @@ public final class ColonyStockCache {
 
         try {
             pruneStaleHandlers();
+            rawScanCount++;
             InventorySummary safeCopy = CreateInventorySummaryAdapter.safeCopy(summary);
             int slotCount = handler.getSlots();
             WeakIdentityHandlerKey key = WeakIdentityHandlerKey.lookup(handler);
@@ -93,7 +95,14 @@ public final class ColonyStockCache {
             hits += summary.hitCount();
             misses += summary.missCount();
         }
-        CreateColonyLogistics.LOGGER.info("MineColonies stock summary cache: {} live handlers, {} hits, {} stale misses", cache.size(), hits, misses);
+        CreateColonyLogistics.LOGGER.info(
+                "MineColonies stock summary cache: {} live handlers, {} raw scans, {} hits, {} stale misses, {} safeCopy calls, {} copied stacks",
+                cache.size(),
+                rawScanCount,
+                hits,
+                misses,
+                CreateInventorySummaryAdapter.safeCopyCount(),
+                CreateInventorySummaryAdapter.copiedStackCount());
     }
 
     private void pruneStaleHandlers() {
