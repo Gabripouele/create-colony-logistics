@@ -12,6 +12,7 @@ import java.lang.ref.WeakReference;
 import java.util.HashMap;
 import java.util.Map;
 import java.util.Optional;
+import java.util.OptionalInt;
 
 public final class ColonyStockCache {
     public static final ColonyStockCache INSTANCE = new ColonyStockCache();
@@ -20,6 +21,8 @@ public final class ColonyStockCache {
     private final Map<WeakIdentityHandlerKey, CachedSummary> cache = new HashMap<>();
     private long lastStatsLogGameTime;
     private long rawScanCount;
+    private long cacheStoreCount;
+    private long factoryPanelSnapshotMissCount;
 
     private ColonyStockCache() {
     }
@@ -50,6 +53,35 @@ public final class ColonyStockCache {
         }
     }
 
+    public OptionalInt getFactoryPanelCountIfFresh(IItemHandler handler, ServerLevel level, net.minecraft.world.item.ItemStack filter) {
+        if (!isEnabledFor(handler)) {
+            return OptionalInt.empty();
+        }
+
+        try {
+            pruneStaleHandlers();
+            int slotCount = handler.getSlots();
+            CachedSummary cached = cache.get(WeakIdentityHandlerKey.lookup(handler));
+            if (cached == null) {
+                factoryPanelSnapshotMissCount++;
+                return OptionalInt.empty();
+            }
+
+            if (!cached.isValid(level.getGameTime(), slotCount, ColonyLogisticsConfig.CACHE_TTL_TICKS.get())) {
+                cached.recordMiss();
+                factoryPanelSnapshotMissCount++;
+                return OptionalInt.empty();
+            }
+
+            cached.recordHit();
+            return OptionalInt.of(cached.countOf(filter, level.getGameTime()));
+        } catch (RuntimeException exception) {
+            factoryPanelSnapshotMissCount++;
+            debug("Factory panel snapshot lookup failed, falling back to Create summary scan", exception);
+            return OptionalInt.empty();
+        }
+    }
+
     public void store(IItemHandler handler, ServerLevel level, InventorySummary summary) {
         if (!isEnabledFor(handler)) {
             return;
@@ -58,6 +90,7 @@ public final class ColonyStockCache {
         try {
             pruneStaleHandlers();
             rawScanCount++;
+            cacheStoreCount++;
             InventorySummary safeCopy = CreateInventorySummaryAdapter.safeCopy(summary);
             int slotCount = handler.getSlots();
             WeakIdentityHandlerKey key = WeakIdentityHandlerKey.lookup(handler);
@@ -90,17 +123,26 @@ public final class ColonyStockCache {
         lastStatsLogGameTime = gameTime;
         long hits = 0;
         long misses = 0;
+        long factoryPanelSnapshotHits = 0;
+        long factoryPanelSnapshotMisses = factoryPanelSnapshotMissCount;
+        long sameTickFactoryPanelReads = 0;
         pruneStaleHandlers();
         for (CachedSummary summary : cache.values()) {
             hits += summary.hitCount();
             misses += summary.missCount();
+            factoryPanelSnapshotHits += summary.factoryPanelSnapshotHitCount();
+            sameTickFactoryPanelReads += summary.sameTickFactoryPanelReadCount();
         }
         CreateColonyLogistics.LOGGER.info(
-                "MineColonies stock summary cache: {} live handlers, {} raw scans, {} hits, {} stale misses, {} safeCopy calls, {} copied stacks",
+                "MineColonies stock summary cache: {} live handlers, {} raw scans, {} stores, {} hits, {} stale misses, {} factory panel snapshot hits, {} factory panel snapshot misses, {} same-tick factory panel reads, {} safeCopy calls, {} copied stacks",
                 cache.size(),
                 rawScanCount,
+                cacheStoreCount,
                 hits,
                 misses,
+                factoryPanelSnapshotHits,
+                factoryPanelSnapshotMisses,
+                sameTickFactoryPanelReads,
                 CreateInventorySummaryAdapter.safeCopyCount(),
                 CreateInventorySummaryAdapter.copiedStackCount());
     }
