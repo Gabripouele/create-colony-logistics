@@ -1,5 +1,7 @@
 package com.createcolonylogistics.clipboard;
 
+import com.createcolonylogistics.CreateColonyLogistics;
+import com.createcolonylogistics.config.ColonyLogisticsConfig;
 import com.minecolonies.api.colony.IColony;
 import com.minecolonies.api.colony.IColonyManager;
 import com.minecolonies.api.colony.buildings.IBuilding;
@@ -10,51 +12,58 @@ import com.minecolonies.api.crafting.IRecipeStorage;
 import com.minecolonies.api.crafting.ModCraftingTypes;
 import com.minecolonies.api.crafting.registry.CraftingType;
 import com.minecolonies.api.colony.requestsystem.token.IToken;
+import com.minecolonies.api.items.component.BuildingId;
+import com.minecolonies.core.colony.buildings.modules.BuildingResourcesModule;
+import com.minecolonies.core.colony.buildings.utils.BuildingBuilderResource;
 import net.minecraft.core.registries.BuiltInRegistries;
 import net.minecraft.resources.ResourceLocation;
 import net.minecraft.world.item.ItemStack;
 import net.minecraft.world.level.Level;
 
 import java.util.ArrayList;
+import java.util.HashMap;
 import java.util.LinkedHashMap;
+import java.util.LinkedHashSet;
 import java.util.List;
 import java.util.Map;
 import java.util.Optional;
+import java.util.Set;
 
 public final class ColonyProductionInspector {
+    private static final Map<ProductionCacheKey, CachedProductionIndex> PRODUCTION_CACHE = new HashMap<>();
+
     private ColonyProductionInspector() {
     }
 
     public static ProductionKnowledge inspect(IColony colony, Level level, ItemStack requestedStack) {
-        List<String> knownBy = new ArrayList<>();
-        List<String> canLearn = new ArrayList<>();
-        DomumOrnamentumRequestInspector.CutterRecipeMatch cutterMatch = DomumOrnamentumRequestInspector.findArchitectsCutterMatch(level, requestedStack)
-                .orElse(null);
-        List<IGenericRecipe> exactRecipes = cutterMatch == null ? List.of() : List.of(cutterMatch.genericRecipe());
-
-        for (IBuilding building : colony.getBuildingManager().getBuildings().values()) {
-            for (ICraftingBuildingModule module : building.getModulesByType(ICraftingBuildingModule.class)) {
-                if (!supportsArchitectsCutter(module)) {
-                    continue;
-                }
-
-                IRecipeStorage knownRecipe = safeGetFirstRecipe(module, requestedStack);
-                if (knownRecipe != null && knownRecipeMatches(knownRecipe, requestedStack, cutterMatch)) {
-                    knownBy.add(buildingLabel(building, module));
-                } else if (!exactRecipes.isEmpty() && safeCanLearn(module) && exactRecipes.stream().anyMatch(recipe -> safeIsRecipeCompatible(module, recipe))) {
-                    canLearn.add(buildingLabel(building, module));
-                }
-            }
-        }
-
-        return new ProductionKnowledge(knownBy, canLearn);
+        return SmartInfoClassificationService.classify(colony, level, requestedStack).productionKnowledge();
     }
 
     public static List<RequestAnalysisService.ProductionInfo> inspectGlobal(IColony colony, Level level) {
+        long gameTime = level.getGameTime();
+        ProductionCacheKey cacheKey = new ProductionCacheKey(level.dimension().location(), colony.getID());
+        CachedProductionIndex cached = PRODUCTION_CACHE.get(cacheKey);
+        if (cached != null && cached.isValid(gameTime, ColonyLogisticsConfig.SMART_CLIPBOARD_PRODUCTION_CACHE_TTL_TICKS.get())) {
+            if (ColonyLogisticsConfig.DEBUG_LOGGING.get()) {
+                CreateColonyLogistics.LOGGER.info("[SmartClipboardPerf] inspectGlobal cache hit colony={} ageTicks={} entries={} buildings={} modules={} recipes={} architectsCutterRecipes={}",
+                        colony.getID(), gameTime - cached.gameTime(), cached.productionIndex().size(), cached.stats().buildingCount(),
+                        cached.stats().moduleCount(), cached.stats().recipeCandidateCount(), cached.stats().architectsCutterRecipeCount());
+            }
+            return copyProductionIndex(cached.productionIndex());
+        }
+
+        long startNanos = System.nanoTime();
         Map<String, ProductionAccumulator> outputs = new LinkedHashMap<>();
         IRecipeManager recipeManager = IColonyManager.getInstance().getRecipeManager();
+        RecipeLookupCache recipeLookupCache = new RecipeLookupCache();
+        int buildingCount = 0;
+        int moduleCount = 0;
+        int recipeCandidateCount = 0;
+        int architectsCutterRecipeCount = 0;
         for (IBuilding building : colony.getBuildingManager().getBuildings().values()) {
+            buildingCount++;
             for (ICraftingBuildingModule module : building.getModulesByType(ICraftingBuildingModule.class)) {
+                moduleCount++;
                 String label = buildingLabel(building, module);
                 for (IToken<?> token : safeRecipeTokens(module)) {
                     IRecipeStorage storage = safeRecipe(recipeManager, token);
@@ -68,7 +77,11 @@ public final class ColonyProductionInspector {
                         }
                     }
                 }
-                for (IGenericRecipe recipe : learnableRecipes(module, level)) {
+                for (IGenericRecipe recipe : learnableRecipes(module, level, recipeLookupCache)) {
+                    recipeCandidateCount++;
+                    if (isArchitectsCutterRecipe(recipe)) {
+                        architectsCutterRecipeCount++;
+                    }
                     if (safeIsRecipeCompatible(module, recipe)) {
                         addLearnable(outputs, recipe.getPrimaryOutput(), label, Optional.ofNullable(recipe.getRecipeId()));
                         for (ItemStack output : recipe.getAllMultiOutputs()) {
@@ -81,13 +94,82 @@ public final class ColonyProductionInspector {
                 }
             }
         }
-        return outputs.values().stream()
+        List<RequestAnalysisService.ProductionInfo> productionIndex = outputs.values().stream()
                 .filter(ProductionAccumulator::hasUsefulContext)
                 .map(ProductionAccumulator::toInfo)
                 .toList();
+        ProductionStats stats = new ProductionStats(buildingCount, moduleCount, recipeCandidateCount, architectsCutterRecipeCount);
+        PRODUCTION_CACHE.put(cacheKey, new CachedProductionIndex(gameTime, copyProductionIndex(productionIndex), stats));
+        if (ColonyLogisticsConfig.DEBUG_LOGGING.get()) {
+            CreateColonyLogistics.LOGGER.info("[SmartClipboardPerf] inspectGlobal rebuilt colony={} durationMs={} entries={} buildings={} modules={} recipes={} architectsCutterRecipes={} recipeCacheHits={} recipeCacheMisses={}",
+                    colony.getID(), elapsedMillis(startNanos), productionIndex.size(), buildingCount, moduleCount, recipeCandidateCount,
+                    architectsCutterRecipeCount, recipeLookupCache.hits(), recipeLookupCache.misses());
+        }
+        return productionIndex;
     }
 
-    private static boolean supportsArchitectsCutter(ICraftingBuildingModule module) {
+    public static List<RequestAnalysisService.ProductionInfo> withExactResourceScrollProduction(
+            IColony colony,
+            Level level,
+            List<RequestAnalysisService.ProductionInfo> baseProductionIndex,
+            List<ItemStack> resourceScrolls
+    ) {
+        if (resourceScrolls == null || resourceScrolls.isEmpty()) {
+            return baseProductionIndex;
+        }
+
+        Map<String, RequestAnalysisService.ProductionInfo> exactOutputs = new LinkedHashMap<>();
+        Map<String, SmartInfoClassificationService.Classification> classificationCache = new HashMap<>();
+        for (ItemStack scroll : resourceScrolls) {
+            if (scroll == null || scroll.isEmpty()) {
+                continue;
+            }
+            IBuilding building = scrollBuilding(scroll);
+            if (building == null || building.getColony() == null || building.getColony().getID() != colony.getID()) {
+                continue;
+            }
+            BuildingResourcesModule resources = building.getFirstModuleOccurance(BuildingResourcesModule.class);
+            if (resources == null) {
+                continue;
+            }
+            for (Map.Entry<String, BuildingBuilderResource> entry : resources.getNeededResources().entrySet()) {
+                BuildingBuilderResource resource = entry.getValue();
+                if (resource == null || resource.getItemStack().isEmpty()) {
+                    continue;
+                }
+                ItemStack stack = resource.getItemStack().copyWithCount(1);
+                if (!DomumOrnamentumRequestInspector.isDomumOrnamentumStack(stack)) {
+                    continue;
+                }
+                String exactKey = SmartClipboardReport.exactStackKey(stack);
+                SmartInfoClassificationService.Classification classification = classificationCache.computeIfAbsent(exactKey,
+                        ignored -> SmartInfoClassificationService.classify(colony, level, stack));
+                List<RequestAnalysisService.SmartInfoMatchKey> resourceKeys = new ArrayList<>();
+                SmartInfoClassificationService.addKey(resourceKeys, SmartClipboardReport.resourceStackKey(entry.getKey()),
+                        SmartClipboardReport.SMART_INFO_PRIORITY_RESOURCE);
+                classification.withExtraKeys(resourceKeys)
+                        .toProductionInfo()
+                        .ifPresent(info -> exactOutputs.merge(exactKey, info, ColonyProductionInspector::mergeProductionInfo));
+            }
+        }
+
+        if (exactOutputs.isEmpty()) {
+            return baseProductionIndex;
+        }
+        List<RequestAnalysisService.ProductionInfo> result = new ArrayList<>(baseProductionIndex);
+        result.addAll(exactOutputs.values());
+        return List.copyOf(result);
+    }
+
+    private static IBuilding scrollBuilding(ItemStack scroll) {
+        try {
+            return BuildingId.readBuildingFromItemStack(scroll);
+        } catch (RuntimeException ignored) {
+            return null;
+        }
+    }
+
+    static boolean supportsArchitectsCutter(ICraftingBuildingModule module) {
         try {
             return module.canLearn(ModCraftingTypes.ARCHITECTS_CUTTER.get())
                     || module.getSupportedCraftingTypes().contains(ModCraftingTypes.ARCHITECTS_CUTTER.get());
@@ -96,7 +178,7 @@ public final class ColonyProductionInspector {
         }
     }
 
-    private static IRecipeStorage safeGetFirstRecipe(ICraftingBuildingModule module, ItemStack requestedStack) {
+    static IRecipeStorage safeGetFirstRecipe(ICraftingBuildingModule module, ItemStack requestedStack) {
         try {
             return module.getFirstRecipe(requestedStack);
         } catch (RuntimeException ignored) {
@@ -104,7 +186,7 @@ public final class ColonyProductionInspector {
         }
     }
 
-    private static boolean knownRecipeMatches(IRecipeStorage knownRecipe, ItemStack requestedStack, DomumOrnamentumRequestInspector.CutterRecipeMatch cutterMatch) {
+    static boolean knownRecipeMatches(IRecipeStorage knownRecipe, ItemStack requestedStack, DomumOrnamentumRequestInspector.CutterRecipeMatch cutterMatch) {
         ItemStack primaryOutput = knownRecipe.getPrimaryOutput();
         if (ItemStack.isSameItemSameComponents(primaryOutput, requestedStack)
                 || DomumOrnamentumRequestInspector.sameMaterializedDomumOutput(primaryOutput, requestedStack)) {
@@ -115,7 +197,7 @@ public final class ColonyProductionInspector {
                 || DomumOrnamentumRequestInspector.sameMaterializedDomumOutput(primaryOutput, cutterMatch.assembledOutput()));
     }
 
-    private static boolean safeCanLearn(ICraftingBuildingModule module) {
+    static boolean safeCanLearn(ICraftingBuildingModule module) {
         try {
             return module.canLearn(ModCraftingTypes.ARCHITECTS_CUTTER.get());
         } catch (RuntimeException ignored) {
@@ -131,7 +213,7 @@ public final class ColonyProductionInspector {
         }
     }
 
-    private static boolean safeIsRecipeCompatible(ICraftingBuildingModule module, IGenericRecipe recipe) {
+    static boolean safeIsRecipeCompatible(ICraftingBuildingModule module, IGenericRecipe recipe) {
         try {
             return module.isRecipeCompatible(recipe);
         } catch (RuntimeException ignored) {
@@ -155,17 +237,13 @@ public final class ColonyProductionInspector {
         }
     }
 
-    private static List<IGenericRecipe> learnableRecipes(ICraftingBuildingModule module, Level level) {
+    private static List<IGenericRecipe> learnableRecipes(ICraftingBuildingModule module, Level level, RecipeLookupCache recipeLookupCache) {
         List<IGenericRecipe> recipes = new ArrayList<>();
         for (CraftingType type : safeSupportedCraftingTypes(module)) {
             if (!safeCanLearn(module, type)) {
                 continue;
             }
-            try {
-                recipes.addAll(type.findRecipes(level.getRecipeManager(), level));
-            } catch (RuntimeException ignored) {
-                // Some crafting types are intentionally context-sensitive.
-            }
+            recipes.addAll(recipeLookupCache.findRecipes(type, level));
         }
         try {
             recipes.addAll(module.getAdditionalRecipesForDisplayPurposesOnly(level));
@@ -183,7 +261,7 @@ public final class ColonyProductionInspector {
         }
     }
 
-    private static String buildingLabel(IBuilding building, ICraftingBuildingModule module) {
+    static String buildingLabel(IBuilding building, ICraftingBuildingModule module) {
         String buildingName = building.getCustomName() == null || building.getCustomName().isBlank()
                 ? building.getBuildingDisplayName()
                 : building.getCustomName();
@@ -224,13 +302,125 @@ public final class ColonyProductionInspector {
         return keys.stream().distinct().toList();
     }
 
+    private static List<RequestAnalysisService.SmartInfoMatchKey> exactResourceProductionKeys(
+            ItemStack stack,
+            Optional<ResourceLocation> recipeId,
+            String resourceKey,
+            Optional<DomumOrnamentumRequestInspector.CutterRecipeMatch> cutterMatch
+    ) {
+        List<RequestAnalysisService.SmartInfoMatchKey> keys = new ArrayList<>(productionKeys(stack, recipeId));
+        addKey(keys, SmartClipboardReport.resourceStackKey(resourceKey), SmartClipboardReport.SMART_INFO_PRIORITY_RESOURCE);
+        cutterMatch.ifPresent(match -> {
+            addKey(keys, SmartClipboardReport.exactStackKey(match.assembledOutput()), SmartClipboardReport.SMART_INFO_PRIORITY_OUTPUT);
+            addKey(keys, SmartClipboardReport.resourceStackKey(match.assembledOutput()), SmartClipboardReport.SMART_INFO_PRIORITY_OUTPUT);
+            addKey(keys, SmartClipboardReport.domumMaterialKey(match.assembledOutput()), SmartClipboardReport.SMART_INFO_PRIORITY_MATERIAL);
+            addKey(keys, SmartClipboardReport.domumFingerprintKey(match.assembledOutput()), SmartClipboardReport.SMART_INFO_PRIORITY_FINGERPRINT);
+            addKey(keys, SmartClipboardReport.recipeOutputKey(match.recipeId().toString(), match.assembledOutput()), SmartClipboardReport.SMART_INFO_PRIORITY_OUTPUT);
+        });
+        return keys.stream().distinct().toList();
+    }
+
+    private static RequestAnalysisService.ProductionInfo mergeProductionInfo(RequestAnalysisService.ProductionInfo first, RequestAnalysisService.ProductionInfo second) {
+        Optional<ResourceLocation> recipeId = first.recipeId().isPresent() ? first.recipeId() : second.recipeId();
+        Optional<ResourceLocation> doBlockId = first.doBlockId().isPresent() ? first.doBlockId() : second.doBlockId();
+        return new RequestAnalysisService.ProductionInfo(
+                first.stack().copy(),
+                mergeStrings(first.knownBy(), second.knownBy()),
+                mergeStrings(first.canLearn(), second.canLearn()),
+                recipeId,
+                doBlockId,
+                mergeKeys(first.keys(), second.keys())
+        );
+    }
+
+    private static List<String> mergeStrings(List<String> first, List<String> second) {
+        Set<String> values = new LinkedHashSet<>();
+        values.addAll(first);
+        values.addAll(second);
+        return List.copyOf(values);
+    }
+
+    private static List<RequestAnalysisService.SmartInfoMatchKey> mergeKeys(List<RequestAnalysisService.SmartInfoMatchKey> first, List<RequestAnalysisService.SmartInfoMatchKey> second) {
+        Set<RequestAnalysisService.SmartInfoMatchKey> values = new LinkedHashSet<>();
+        values.addAll(first);
+        values.addAll(second);
+        return List.copyOf(values);
+    }
+
     private static void addKey(List<RequestAnalysisService.SmartInfoMatchKey> keys, String key, int priority) {
         if (key != null && !key.isBlank()) {
             keys.add(new RequestAnalysisService.SmartInfoMatchKey(key, priority));
         }
     }
 
+    private static boolean isArchitectsCutterRecipe(IGenericRecipe recipe) {
+        ResourceLocation recipeId = recipe.getRecipeId();
+        return recipeId != null
+                && recipeId.getNamespace().equals("domum_ornamentum")
+                && recipeId.getPath().contains("architect");
+    }
+
+    private static long elapsedMillis(long startNanos) {
+        return (System.nanoTime() - startNanos) / 1_000_000L;
+    }
+
+    private static List<RequestAnalysisService.ProductionInfo> copyProductionIndex(List<RequestAnalysisService.ProductionInfo> productionIndex) {
+        return productionIndex.stream()
+                .map(info -> new RequestAnalysisService.ProductionInfo(
+                        info.stack().copy(),
+                        List.copyOf(info.knownBy()),
+                        List.copyOf(info.canLearn()),
+                        info.recipeId(),
+                        info.doBlockId(),
+                        List.copyOf(info.keys())
+                ))
+                .toList();
+    }
+
     public record ProductionKnowledge(List<String> knownBy, List<String> canLearn) {
+    }
+
+    private record ProductionCacheKey(ResourceLocation dimension, int colonyId) {
+    }
+
+    private record CachedProductionIndex(long gameTime, List<RequestAnalysisService.ProductionInfo> productionIndex, ProductionStats stats) {
+        private boolean isValid(long now, int ttlTicks) {
+            return now >= gameTime && now - gameTime <= ttlTicks;
+        }
+    }
+
+    private record ProductionStats(int buildingCount, int moduleCount, int recipeCandidateCount, int architectsCutterRecipeCount) {
+    }
+
+    private static final class RecipeLookupCache {
+        private final Map<CraftingType, List<IGenericRecipe>> recipesByType = new HashMap<>();
+        private int hits;
+        private int misses;
+
+        private List<IGenericRecipe> findRecipes(CraftingType type, Level level) {
+            List<IGenericRecipe> cached = recipesByType.get(type);
+            if (cached != null) {
+                hits++;
+                return cached;
+            }
+            misses++;
+            List<IGenericRecipe> recipes;
+            try {
+                recipes = List.copyOf(type.findRecipes(level.getRecipeManager(), level));
+            } catch (RuntimeException ignored) {
+                recipes = List.of();
+            }
+            recipesByType.put(type, recipes);
+            return recipes;
+        }
+
+        private int hits() {
+            return hits;
+        }
+
+        private int misses() {
+            return misses;
+        }
     }
 
     private static final class ProductionAccumulator {

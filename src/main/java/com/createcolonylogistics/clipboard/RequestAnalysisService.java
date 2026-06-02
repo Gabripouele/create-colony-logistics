@@ -21,6 +21,7 @@ import net.minecraft.server.level.ServerLevel;
 import net.minecraft.server.level.ServerPlayer;
 import net.minecraft.world.item.ItemStack;
 import com.createcolonylogistics.CreateColonyLogistics;
+import com.createcolonylogistics.config.ColonyLogisticsConfig;
 
 import java.lang.reflect.Method;
 import java.util.ArrayList;
@@ -40,6 +41,11 @@ public final class RequestAnalysisService {
     }
 
     public static AnalysisResult analyze(ServerLevel level, IColony colony, int limit) {
+        return analyze(level, colony, limit, List.of());
+    }
+
+    public static AnalysisResult analyze(ServerLevel level, IColony colony, int limit, List<ItemStack> resourceScrolls) {
+        long startNanos = System.nanoTime();
         Map<String, List<RequestReportEntry>> grouped = new LinkedHashMap<>();
         Set<IToken<?>> lessImportantRequests = lessImportantRequests(colony);
         WorkerGroups workerGroups = WorkerGroups.from(colony);
@@ -67,8 +73,21 @@ public final class RequestAnalysisService {
             reported++;
         }
 
+        long productionStartNanos = System.nanoTime();
+        List<ProductionInfo> productionIndex = ColonyProductionInspector.inspectGlobal(colony, level);
+        productionIndex = ColonyProductionInspector.withExactResourceScrollProduction(colony, level, productionIndex, resourceScrolls);
+        long productionMillis = elapsedMillis(productionStartNanos);
+        if (ColonyLogisticsConfig.DEBUG_LOGGING.get()) {
+            CreateColonyLogistics.LOGGER.info("[SmartClipboardPerf] analyze colony={} durationMs={} productionMs={} activeRequests={} reported={} groups={} buildings={} productionEntries={}",
+                    colony.getID(), elapsedMillis(startNanos), productionMillis, activeRequestCount, reported, grouped.size(),
+                    colony.getBuildingManager().getBuildings().size(), productionIndex.size());
+        }
         return new AnalysisResult(colony.getName(), colony.getID(), colony.getBuildingManager().getBuildings().size(), activeRequestCount,
-                grouped, ColonyProductionInspector.inspectGlobal(colony, level), reported, capped);
+                grouped, productionIndex, reported, capped);
+    }
+
+    private static long elapsedMillis(long startNanos) {
+        return (System.nanoTime() - startNanos) / 1_000_000L;
     }
 
     /**
@@ -637,14 +656,13 @@ public final class RequestAnalysisService {
     private static RequestReportEntry inspectRequest(ServerLevel level, IColony colony, IBuilding building, IRequest<?> request, ItemStack requestedStack, boolean important, WorkerGroups workerGroups) {
         boolean minimumStockRequest = isMinimumStockRequest(request);
         boolean domumRequest = DomumOrnamentumRequestInspector.isDomumOrnamentumStack(requestedStack);
-        Optional<DomumOrnamentumRequestInspector.CutterRecipeMatch> cutterMatch = domumRequest
-                ? DomumOrnamentumRequestInspector.findArchitectsCutterMatch(level, requestedStack)
-                : Optional.empty();
-        ColonyProductionInspector.ProductionKnowledge knowledge = domumRequest
-                ? ColonyProductionInspector.inspect(colony, level, requestedStack)
-                : new ColonyProductionInspector.ProductionKnowledge(Collections.emptyList(), Collections.emptyList());
+        SmartInfoClassificationService.Classification classification = domumRequest
+                ? SmartInfoClassificationService.classify(colony, level, requestedStack)
+                : SmartInfoClassificationService.Classification.empty(requestedStack);
+        Optional<DomumOrnamentumRequestInspector.CutterRecipeMatch> cutterMatch = classification.cutterMatch();
+        ColonyProductionInspector.ProductionKnowledge knowledge = classification.productionKnowledge();
         Optional<ResourceLocation> cutterRecipe = domumRequest
-                ? cutterMatch.map(DomumOrnamentumRequestInspector.CutterRecipeMatch::recipeId)
+                ? classification.recipeId()
                 : Optional.empty();
         // Pipeline priority: keep MineColonies' own request graph authoritative.
         // Synthetic Domum Ornamentum cutter inputs are only supplemental when the

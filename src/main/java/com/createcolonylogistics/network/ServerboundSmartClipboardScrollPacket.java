@@ -71,8 +71,9 @@ public record ServerboundSmartClipboardScrollPacket(int action, int slot, Scroll
             Optional<IColony> colony = ColonyContextResolver.resolveLinkedClipboard(clipboard.get());
             boolean importantOnly = SmartClipboardFilterState.isImportantOnly(clipboard.get());
             if (colony.isPresent()) {
-                RequestAnalysisService.AnalysisResult analysis = RequestAnalysisService.analyze(player.serverLevel(), colony.get(), 250);
-                report = SmartClipboardReport.fromAnalysis(analysis, SmartClipboardScrollStorage.read(clipboard.get()), importantOnly);
+                java.util.List<ItemStack> resourceScrolls = SmartClipboardScrollStorage.read(clipboard.get());
+                RequestAnalysisService.AnalysisResult analysis = RequestAnalysisService.analyze(player.serverLevel(), colony.get(), 250, resourceScrolls);
+                report = SmartClipboardReport.fromAnalysis(analysis, resourceScrolls, importantOnly);
             } else {
                 report = new SmartClipboardReport("", 0, 0, 0, false, importantOnly, SmartClipboardScrollStorage.read(clipboard.get()), java.util.List.of());
             }

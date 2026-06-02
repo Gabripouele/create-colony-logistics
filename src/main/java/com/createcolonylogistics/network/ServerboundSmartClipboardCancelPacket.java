@@ -84,8 +84,9 @@ public record ServerboundSmartClipboardCancelPacket(String requestToken) impleme
         boolean importantOnly = SmartClipboardFilterState.isImportantOnly(clipboard);
         SmartClipboardReport report;
         if (colony.isPresent()) {
-            RequestAnalysisService.AnalysisResult analysis = RequestAnalysisService.analyze(player.serverLevel(), colony.get(), MAX_REPORT_REQUESTS);
-            report = SmartClipboardReport.fromAnalysis(analysis, SmartClipboardScrollStorage.read(clipboard), importantOnly);
+            java.util.List<ItemStack> resourceScrolls = SmartClipboardScrollStorage.read(clipboard);
+            RequestAnalysisService.AnalysisResult analysis = RequestAnalysisService.analyze(player.serverLevel(), colony.get(), MAX_REPORT_REQUESTS, resourceScrolls);
+            report = SmartClipboardReport.fromAnalysis(analysis, resourceScrolls, importantOnly);
         } else {
             report = new SmartClipboardReport("", 0, 0, 0, false, importantOnly, SmartClipboardScrollStorage.read(clipboard), java.util.List.of());
         }

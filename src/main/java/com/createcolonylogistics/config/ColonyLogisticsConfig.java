@@ -13,6 +13,10 @@ public final class ColonyLogisticsConfig {
             .comment("How long a cached MineColonies stock summary may be reused for display/monitoring reads.")
             .defineInRange("cacheTtlTicks", 40, 1, 20 * 60 * 10);
 
+    public static final ModConfigSpec.IntValue SMART_CLIPBOARD_PRODUCTION_CACHE_TTL_TICKS = BUILDER
+            .comment("How long Smart Clipboard global production fallback data may be reused between report opens.")
+            .defineInRange("smartClipboardProductionCacheTtlTicks", 100, 1, 20 * 60 * 10);
+
     public static final ModConfigSpec.BooleanValue DEBUG_LOGGING = BUILDER
             .comment("Enables extra diagnostics for cache decisions.")
             .define("debugLogging", false);

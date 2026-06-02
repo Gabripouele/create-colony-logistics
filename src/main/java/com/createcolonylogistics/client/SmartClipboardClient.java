@@ -6,11 +6,21 @@ import net.minecraft.world.InteractionHand;
 import net.minecraft.world.entity.player.Player;
 import net.minecraft.world.item.ItemStack;
 
+import java.util.List;
 import java.lang.reflect.Constructor;
 import java.lang.reflect.Method;
 
 public final class SmartClipboardClient {
     private SmartClipboardClient() {
+    }
+
+    public static void openLoading() {
+        Minecraft minecraft = Minecraft.getInstance();
+        if (minecraft.screen instanceof SmartClipboardScreen screen) {
+            screen.setLoading();
+        } else {
+            minecraft.setScreen(new SmartClipboardScreen(loadingReport(), true));
+        }
     }
 
     public static void open(SmartClipboardReport report) {
@@ -29,6 +39,10 @@ public final class SmartClipboardClient {
         } else {
             minecraft.setScreen(new SmartClipboardScreen(report));
         }
+    }
+
+    private static SmartClipboardReport loadingReport() {
+        return new SmartClipboardReport("", 0, 0, 0, false, false, List.of(), List.of());
     }
 
     static boolean openMineColoniesClipboard() {

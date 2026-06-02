@@ -79,8 +79,9 @@ final class SmartInfoResolver {
         }
         SmartClipboardReport.ProductionInfo production = match.production();
         boolean domumFallback = DomumOrnamentumRequestInspector.isDomumOrnamentumStack(stack);
-        List<String> knownBy = domumFallback && !isExactDomumProductionMatch(match) ? List.of() : production.knownBy();
-        List<String> canLearn = domumFallback ? List.of() : production.canLearn();
+        boolean exactDomumProduction = isExactDomumProductionMatch(match, stack);
+        List<String> knownBy = domumFallback && !exactDomumProduction ? List.of() : production.knownBy();
+        List<String> canLearn = domumFallback && !exactDomumProduction ? List.of() : production.canLearn();
         boolean hasProductionContext = !knownBy.isEmpty() || !canLearn.isEmpty();
         boolean hasDomumShapeContext = domumFallback
                 && (production.recipeId().isPresent() || (production.doBlockId() != null && !production.doBlockId().isBlank()));
@@ -117,7 +118,11 @@ final class SmartInfoResolver {
         return !ambiguous && best != null ? Optional.of(best) : Optional.empty();
     }
 
-    private static boolean isExactDomumProductionMatch(ProductionMatch match) {
+    private static boolean isExactDomumProductionMatch(ProductionMatch match, ItemStack stack) {
+        if (!ItemStack.isSameItemSameComponents(match.production().stack(), stack)
+                && !DomumOrnamentumRequestInspector.sameMaterializedDomumOutput(match.production().stack(), stack)) {
+            return false;
+        }
         return match.priority() <= SmartClipboardReport.SMART_INFO_PRIORITY_OUTPUT
                 && !match.key().startsWith("recipe:");
     }

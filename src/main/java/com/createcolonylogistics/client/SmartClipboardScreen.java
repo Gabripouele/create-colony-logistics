@@ -10,6 +10,7 @@ import com.createcolonylogistics.network.ServerboundSmartClipboardDebugPacket;
 import com.createcolonylogistics.network.ServerboundSmartClipboardCancelPacket;
 import com.createcolonylogistics.network.ServerboundSmartClipboardFilterPacket;
 import com.createcolonylogistics.network.ServerboundSmartClipboardScrollPacket;
+import com.createcolonylogistics.network.ServerboundSmartInfoRecipeDiagnosticPacket;
 import com.createcolonylogistics.network.ServerboundSmartScrollDebugPacket;
 import com.minecolonies.api.colony.IColonyView;
 import com.minecolonies.api.colony.buildings.views.IBuildingView;
@@ -46,6 +47,7 @@ import net.minecraft.world.item.ItemStack;
 import net.minecraft.world.item.TooltipFlag;
 import net.neoforged.neoforge.items.wrapper.InvWrapper;
 import net.neoforged.neoforge.network.PacketDistributor;
+import org.lwjgl.glfw.GLFW;
 
 import java.util.ArrayList;
 import java.util.Collection;
@@ -140,7 +142,10 @@ public class SmartClipboardScreen extends Screen {
     private int topPos;
     private int scroll;
     private int contentHeight;
+    private int lastMouseX;
+    private int lastMouseY;
     private boolean importantOnly;
+    private boolean loading;
     private Tab activeTab = Tab.REQUESTS;
     private int selectedScroll;
     private boolean draggingScrollbar;
@@ -149,10 +154,15 @@ public class SmartClipboardScreen extends Screen {
     private static int rememberedSelectedScroll;
 
     public SmartClipboardScreen(SmartClipboardReport report) {
+        this(report, false);
+    }
+
+    public SmartClipboardScreen(SmartClipboardReport report, boolean loading) {
         super(Component.translatable("screen.create_colony_logistics.smart_clipboard.title"));
         this.report = report;
         this.smartInfoResolver = new SmartInfoResolver(report);
         this.importantOnly = report.importantOnly();
+        this.loading = loading;
         this.activeTab = rememberedTab;
         this.selectedScroll = clampSelectedScroll(report, rememberedSelectedScroll);
     }
@@ -165,6 +175,8 @@ public class SmartClipboardScreen extends Screen {
 
     @Override
     public void render(GuiGraphics graphics, int mouseX, int mouseY, float partialTick) {
+        lastMouseX = mouseX;
+        lastMouseY = mouseY;
         graphics.fill(0, 0, width, height, 0x99000000);
         renderStockKeeperPanel(graphics);
         renderPageTabs(graphics, mouseX, mouseY);
@@ -174,8 +186,10 @@ public class SmartClipboardScreen extends Screen {
                 : Component.translatable("screen.create_colony_logistics.smart_clipboard.scrolls_title"), 196);
         graphics.drawString(font, headerTitle, leftPos + (PANEL_WIDTH - font.width(headerTitle)) / 2, topPos + TITLE_Y, TITLE_TEXT, false);
         graphics.drawString(font, truncate(Component.literal(displayedColonyName()), LIST_WIDTH), leftPos + LIST_X, topPos + COLONY_LINE_Y, SECONDARY_TEXT, false);
-        renderImportantToggle(graphics, mouseX, mouseY);
-        if (activeTab == Tab.REQUESTS) {
+        if (!loading) {
+            renderImportantToggle(graphics, mouseX, mouseY);
+        }
+        if (activeTab == Tab.REQUESTS && !loading) {
             graphics.drawString(font, truncate(Component.translatable("screen.create_colony_logistics.smart_clipboard.summary", displayedActiveRequestCount(), report.buildingCount()), LIST_WIDTH), leftPos + LIST_X, topPos + SUMMARY_LINE_Y, SECONDARY_TEXT, false);
         }
 
@@ -183,11 +197,13 @@ public class SmartClipboardScreen extends Screen {
         int listBottom = listBottom();
         graphics.fill(leftPos + LIST_X, listTop - 3, leftPos + LIST_X + LIST_WIDTH, listTop - 2, DIVIDER_LINE);
         scroll = clampScroll(scroll, listTop, listBottom);
-        if (activeTab == Tab.SCROLLS) {
+        if (activeTab == Tab.SCROLLS && !loading) {
             renderScrollStorageGrid(graphics);
         }
         graphics.enableScissor(leftPos + LIST_X, listTop, leftPos + LIST_X + LIST_WIDTH, listBottom);
-        contentHeight = activeTab == Tab.REQUESTS
+        contentHeight = loading
+                ? renderLoadingMessage(graphics, listTop)
+                : activeTab == Tab.REQUESTS
                 ? renderEntries(graphics, mouseX, mouseY, listTop, listBottom)
                 : renderScrollDetails(graphics, listTop);
         graphics.disableScissor();
@@ -202,6 +218,9 @@ public class SmartClipboardScreen extends Screen {
             renderable.render(graphics, mouseX, mouseY, partialTick);
         }
         if (renderHoveredTabTooltip(graphics, mouseX, mouseY)) {
+            return;
+        }
+        if (loading) {
             return;
         }
         if (activeTab == Tab.SCROLLS && (renderHoveredScrollTooltip(graphics, mouseX, mouseY)
@@ -296,7 +315,9 @@ public class SmartClipboardScreen extends Screen {
         List<Integer> visibleIndexes = filteredEntryIndexes();
 
         if (visibleIndexes.isEmpty()) {
-            Component empty = Component.translatable("screen.create_colony_logistics.smart_clipboard.empty");
+            Component empty = missingReport()
+                    ? Component.translatable("item.create_colony_logistics.smart_colony_clipboard.no_colony")
+                    : Component.translatable("screen.create_colony_logistics.smart_clipboard.empty");
             graphics.drawString(font, truncate(empty, cardWidth), x, y + 12, MUTED_TEXT, false);
             if (report.capped()) {
                 graphics.drawString(font, Component.translatable("screen.create_colony_logistics.smart_clipboard.capped"), x, y + 26, MUTED_TEXT, false);
@@ -319,6 +340,13 @@ public class SmartClipboardScreen extends Screen {
         }
 
         return Math.max(0, y - (listTop - scroll));
+    }
+
+    private int renderLoadingMessage(GuiGraphics graphics, int listTop) {
+        int x = leftPos + LIST_X;
+        int y = listTop - scroll;
+        graphics.drawString(font, truncate(Component.literal("Loading Colony information..."), LIST_WIDTH), x, y + 12, MUTED_TEXT, false);
+        return 48;
     }
 
     private void renderScrollStorageGrid(GuiGraphics graphics) {
@@ -437,6 +465,9 @@ public class SmartClipboardScreen extends Screen {
     }
 
     private String displayedColonyName() {
+        if (loading) {
+            return "";
+        }
         if (activeTab == Tab.REQUESTS) {
             return report.colonyName();
         }
@@ -638,6 +669,9 @@ public class SmartClipboardScreen extends Screen {
         if (handleTabClick(mouseX, mouseY)) {
             return true;
         }
+        if (loading) {
+            return true;
+        }
 
         if (importantToggleHit(mouseX, mouseY)) {
             importantOnly = !importantOnly;
@@ -681,6 +715,176 @@ public class SmartClipboardScreen extends Screen {
         }
 
         return super.mouseClicked(mouseX, mouseY, button);
+    }
+
+    @Override
+    public boolean keyPressed(int keyCode, int scanCode, int modifiers) {
+        // DIAGNOSTIC ONLY - remove after Cutter recipe source-truth audit
+        if (keyCode == GLFW.GLFW_KEY_F9 && Screen.hasControlDown()) {
+            return sendRecipeDiagnosticForHover(lastMouseX, lastMouseY);
+        }
+        return super.keyPressed(keyCode, scanCode, modifiers);
+    }
+
+    // DIAGNOSTIC ONLY - remove after Cutter recipe source-truth audit
+    private boolean sendRecipeDiagnosticForHover(int mouseX, int mouseY) {
+        if (loading) {
+            showClientMessage(Component.literal("Smart Info recipe diagnostic: report is still loading"));
+            return true;
+        }
+        Optional<DiagnosticTarget> target = hoveredRecipeDiagnosticTarget(mouseX, mouseY);
+        if (target.isEmpty()) {
+            showClientMessage(Component.literal("Smart Info recipe diagnostic: hover a request, tree, or resource item"));
+            return true;
+        }
+        PacketDistributor.sendToServer(new ServerboundSmartInfoRecipeDiagnosticPacket(
+                target.get().stack().copy(),
+                target.get().context(),
+                target.get().hoverPath(),
+                target.get().directEntryIndex(),
+                target.get().parentEntryIndex(),
+                target.get().resourceKey(),
+                target.get().smartInfoKeys()
+        ));
+        showClientMessage(Component.literal("Smart Info recipe diagnostic requested for "
+                + target.get().stack().getHoverName().getString()));
+        return true;
+    }
+
+    // DIAGNOSTIC ONLY - remove after Cutter recipe source-truth audit
+    private Optional<DiagnosticTarget> hoveredRecipeDiagnosticTarget(int mouseX, int mouseY) {
+        if (activeTab == Tab.SCROLLS) {
+            return hoveredScrollResourceDiagnosticTarget(mouseX, mouseY, listTop());
+        }
+        Optional<DiagnosticTarget> request = hoveredRequestRowDiagnosticTarget(mouseX, mouseY, listTop());
+        return request.isPresent() ? request : hoveredTreeItemDiagnosticTarget(mouseX, mouseY, listTop());
+    }
+
+    // DIAGNOSTIC ONLY - remove after Cutter recipe source-truth audit
+    private Optional<DiagnosticTarget> hoveredRequestRowDiagnosticTarget(int mouseX, int mouseY, int listTop) {
+        if (mouseX < leftPos + LIST_X || mouseX >= leftPos + LIST_X + LIST_WIDTH
+                || mouseY < listTop || mouseY >= listBottom(Tab.REQUESTS)) {
+            return Optional.empty();
+        }
+        int x = leftPos + LIST_X;
+        int y = listTop - scroll;
+        for (int i : filteredEntryIndexes()) {
+            SmartClipboardReport.Entry entry = report.entries().get(i);
+            int cardHeight = entryHeight(entry, i);
+            if (mouseX >= x + 2 && mouseX < x + 18 && mouseY >= y + 4 && mouseY < y + 20) {
+                ItemStack stack = displayStack(entry);
+                if (!stack.isEmpty()) {
+                    String context = "request-row token=" + entry.requestToken().orElse("none")
+                            + " requester=" + displayRequester(entry);
+                    return Optional.of(new DiagnosticTarget(
+                            stack,
+                            context,
+                            "main-row",
+                            i,
+                            -1,
+                            "",
+                            List.of()
+                    ));
+                }
+            }
+            y += cardHeight + ROW_GAP;
+        }
+        return Optional.empty();
+    }
+
+    // DIAGNOSTIC ONLY - remove after Cutter recipe source-truth audit
+    private Optional<DiagnosticTarget> hoveredTreeItemDiagnosticTarget(int mouseX, int mouseY, int listTop) {
+        if (mouseX < leftPos + LIST_X || mouseX >= leftPos + LIST_X + LIST_WIDTH
+                || mouseY < listTop || mouseY >= listBottom(Tab.REQUESTS)) {
+            return Optional.empty();
+        }
+
+        int x = leftPos + LIST_X;
+        int y = listTop - scroll;
+        for (int i : filteredEntryIndexes()) {
+            SmartClipboardReport.Entry entry = report.entries().get(i);
+            int cardHeight = entryHeight(entry, i);
+            if (expanded.contains(i) && hasExpandedDetails(entry)) {
+                int detailY = expandedDetailStartY(entry, y);
+                detailY += valueLineHeight(entry.minimumStockRequest()
+                        ? Component.translatable("screen.create_colony_logistics.smart_clipboard.minimum_stock_request").getString()
+                        : null);
+                if (!entry.minimumStockRequest()) {
+                    detailY += valueLineHeight(entry.requestingWorkerName().orElse(null));
+                }
+                List<SmartClipboardReport.RequestTreeNode> dependencies = dependencyNodes(entry);
+                if (!dependencies.isEmpty()) {
+                    detailY += 2;
+                    for (int nodeIndex : visibleDependencyIndexes(entry, i)) {
+                        SmartClipboardReport.RequestTreeNode node = dependencies.get(nodeIndex);
+                        ItemStack stack = node.stack();
+                        if (!stack.isEmpty()) {
+                            int visibleDepth = Math.max(1, node.depth());
+                            int indent = Math.min(36, (visibleDepth - 1) * TREE_INDENT);
+                            int iconX = x + 4 + indent + 9;
+                            if (mouseX >= iconX && mouseX < iconX + 16 && mouseY >= detailY && mouseY < detailY + 16) {
+                                String context = "request-tree parentToken=" + entry.requestToken().orElse("none")
+                                        + " node=" + treeNodeText(node);
+                                return Optional.of(new DiagnosticTarget(
+                                        stack,
+                                        context,
+                                        "request-tree",
+                                        -1,
+                                        i,
+                                        "",
+                                        List.of()
+                                ));
+                            }
+                        }
+                        detailY += dependencyRowHeight(node);
+                    }
+                }
+            }
+            y += cardHeight + ROW_GAP;
+        }
+        return Optional.empty();
+    }
+
+    // DIAGNOSTIC ONLY - remove after Cutter recipe source-truth audit
+    private Optional<DiagnosticTarget> hoveredScrollResourceDiagnosticTarget(int mouseX, int mouseY, int listTop) {
+        if (mouseX < leftPos + LIST_X || mouseX >= leftPos + LIST_X + LIST_WIDTH
+                || mouseY < listTop || mouseY >= listBottom(Tab.SCROLLS)) {
+            return Optional.empty();
+        }
+        List<ItemStack> scrolls = report.resourceScrolls();
+        ItemStack selected = selectedScroll >= 0 && selectedScroll < scrolls.size() ? scrolls.get(selectedScroll) : ItemStack.EMPTY;
+        if (selected.isEmpty()) {
+            return Optional.empty();
+        }
+        ResourceScrollContent content = buildClientResourceScrollRows(selected);
+        if (!content.error().isBlank() || content.resources().isEmpty()) {
+            return Optional.empty();
+        }
+
+        int x = leftPos + LIST_X;
+        int y = listTop - scroll;
+        y += LINE_HEIGHT;
+        if (!content.projectTitle().isBlank()) {
+            y += LINE_HEIGHT;
+        }
+        y += LINE_HEIGHT + 3;
+
+        for (ResourceLine resource : content.resources()) {
+            if (mouseX >= x && mouseX < x + 16 && mouseY >= y && mouseY < y + 16 && !resource.stack().isEmpty()) {
+                String context = "resource-scroll row=" + resource.name() + " key=" + resource.resourceKey();
+                return Optional.of(new DiagnosticTarget(
+                        resource.stack(),
+                        context,
+                        "resource-scroll",
+                        -1,
+                        -1,
+                        resource.resourceKey(),
+                        resource.smartInfoKeys()
+                ));
+            }
+            y += RESOURCE_ROW_HEIGHT;
+        }
+        return Optional.empty();
     }
 
     private boolean cancelEntry(SmartClipboardReport.Entry entry) {
@@ -1077,6 +1281,9 @@ public class SmartClipboardScreen extends Screen {
 
     @Override
     public boolean mouseScrolled(double mouseX, double mouseY, double scrollX, double scrollY) {
+        if (loading) {
+            return false;
+        }
         if (activeTab == Tab.SCROLLS && (mouseX < leftPos + LIST_X || mouseX >= leftPos + LIST_X + LIST_WIDTH
                 || mouseY < listTop() || mouseY >= listBottom())) {
             return false;
@@ -1087,6 +1294,9 @@ public class SmartClipboardScreen extends Screen {
 
     @Override
     public boolean mouseDragged(double mouseX, double mouseY, int button, double dragX, double dragY) {
+        if (loading) {
+            return false;
+        }
         if (draggingScrollbar && button == 0) {
             ScrollbarMetrics metrics = scrollbarMetrics(listTop(), listBottom());
             if (metrics != null) {
@@ -1722,7 +1932,15 @@ public class SmartClipboardScreen extends Screen {
         this.report = report;
         this.smartInfoResolver = new SmartInfoResolver(report);
         this.importantOnly = report.importantOnly();
+        this.loading = false;
         selectedScroll = clampSelectedScroll(report, selectedScroll);
+    }
+
+    public void setLoading() {
+        this.loading = true;
+        this.scroll = 0;
+        this.draggingScrollbar = false;
+        this.cancelRequestsInFlight.clear();
     }
 
     public void applyCancelResult(SmartClipboardReport report, String requestToken, boolean accepted) {
@@ -1736,6 +1954,9 @@ public class SmartClipboardScreen extends Screen {
     }
 
     private int displayedActiveRequestCount() {
+        if (missingReport()) {
+            return 0;
+        }
         Set<String> pendingVisible = new HashSet<>();
         for (SmartClipboardReport.Entry entry : report.entries()) {
             entry.requestToken()
@@ -1747,6 +1968,10 @@ public class SmartClipboardScreen extends Screen {
 
     static boolean shouldRenderImportantToggleGreen(boolean importantOnly) {
         return !importantOnly;
+    }
+
+    private boolean missingReport() {
+        return !loading && report.colonyId() == 0 && report.colonyName().isBlank() && report.entries().isEmpty();
     }
 
     static boolean passesImportantFilter(boolean importantOnly, boolean entryImportant) {
@@ -1991,6 +2216,18 @@ public class SmartClipboardScreen extends Screen {
     private enum Tab {
         REQUESTS,
         SCROLLS
+    }
+
+    // DIAGNOSTIC ONLY - remove after Cutter recipe source-truth audit
+    private record DiagnosticTarget(
+            ItemStack stack,
+            String context,
+            String hoverPath,
+            int directEntryIndex,
+            int parentEntryIndex,
+            String resourceKey,
+            List<SmartClipboardReport.SmartInfoKey> smartInfoKeys
+    ) {
     }
 
     private record ResourceScrollContent(

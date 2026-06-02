@@ -14,7 +14,12 @@ public final class CCLNetworking {
                 ClientboundSmartClipboardReportPacket.STREAM_CODEC,
                 ClientboundSmartClipboardReportPacket::handle
         );
-        // Release safety: debug-only payloads are intentionally not registered.
+        // DIAGNOSTIC ONLY - remove after Cutter recipe source-truth audit
+        registrar.playToServer(
+                ServerboundSmartInfoRecipeDiagnosticPacket.TYPE,
+                ServerboundSmartInfoRecipeDiagnosticPacket.STREAM_CODEC,
+                ServerboundSmartInfoRecipeDiagnosticPacket::handle
+        );
         registrar.playToServer(
                 ServerboundSmartClipboardScrollPacket.TYPE,
                 ServerboundSmartClipboardScrollPacket.STREAM_CODEC,

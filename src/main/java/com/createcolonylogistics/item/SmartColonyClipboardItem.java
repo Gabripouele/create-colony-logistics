@@ -26,6 +26,7 @@ import net.minecraft.world.level.Level;
 import net.neoforged.neoforge.network.PacketDistributor;
 
 import java.lang.reflect.Method;
+import java.util.List;
 import java.util.Optional;
 
 public class SmartColonyClipboardItem extends Item {
@@ -37,6 +38,12 @@ public class SmartColonyClipboardItem extends Item {
 
     @Override
     public InteractionResult useOn(UseOnContext context) {
+        if (context.getLevel().isClientSide()) {
+            if (context.getPlayer() == null || !context.getPlayer().isShiftKeyDown()) {
+                openLoadingClient();
+            }
+            return InteractionResult.sidedSuccess(true);
+        }
         if (context.getPlayer() instanceof ServerPlayer serverPlayer) {
             if (serverPlayer.isShiftKeyDown()) {
                 IBuilding building = IMinecoloniesAPI.getInstance().getColonyManager().getBuilding(context.getLevel(), context.getClickedPos());
@@ -55,7 +62,7 @@ public class SmartColonyClipboardItem extends Item {
                 }
             }
             runReport(serverPlayer, context.getItemInHand());
-            return InteractionResult.SUCCESS;
+            return InteractionResult.CONSUME;
         }
         return InteractionResult.sidedSuccess(context.getLevel().isClientSide());
     }
@@ -63,9 +70,13 @@ public class SmartColonyClipboardItem extends Item {
     @Override
     public InteractionResultHolder<ItemStack> use(Level level, Player player, InteractionHand hand) {
         ItemStack stack = player.getItemInHand(hand);
+        if (level.isClientSide()) {
+            openLoadingClient();
+            return InteractionResultHolder.sidedSuccess(stack, true);
+        }
         if (player instanceof ServerPlayer serverPlayer) {
             runReport(serverPlayer, stack);
-            return InteractionResultHolder.success(stack);
+            return InteractionResultHolder.consume(stack);
         }
         return InteractionResultHolder.sidedSuccess(stack, level.isClientSide());
     }
@@ -74,13 +85,33 @@ public class SmartColonyClipboardItem extends Item {
         Optional<IColony> colony = ColonyContextResolver.resolveLinkedClipboard(clipboard);
         if (colony.isEmpty()) {
             player.sendSystemMessage(Component.translatable("item.create_colony_logistics.smart_colony_clipboard.no_colony"));
+            PacketDistributor.sendToPlayer(player, new ClientboundSmartClipboardReportPacket(emptyReport(clipboard)));
             return;
         }
 
-        RequestAnalysisService.AnalysisResult result = RequestAnalysisService.analyze(player.serverLevel(), colony.get(), MAX_REPORT_REQUESTS);
-        PacketDistributor.sendToPlayer(player, new ClientboundSmartClipboardReportPacket(
-                SmartClipboardReport.fromAnalysis(result, SmartClipboardScrollStorage.read(clipboard), SmartClipboardFilterState.isImportantOnly(clipboard))
-        ));
+        try {
+            List<ItemStack> resourceScrolls = SmartClipboardScrollStorage.read(clipboard);
+            RequestAnalysisService.AnalysisResult result = RequestAnalysisService.analyze(player.serverLevel(), colony.get(), MAX_REPORT_REQUESTS, resourceScrolls);
+            PacketDistributor.sendToPlayer(player, new ClientboundSmartClipboardReportPacket(
+                    SmartClipboardReport.fromAnalysis(result, resourceScrolls, SmartClipboardFilterState.isImportantOnly(clipboard))
+            ));
+        } catch (RuntimeException exception) {
+            player.sendSystemMessage(Component.translatable("item.create_colony_logistics.smart_colony_clipboard.no_colony"));
+            PacketDistributor.sendToPlayer(player, new ClientboundSmartClipboardReportPacket(emptyReport(clipboard)));
+        }
+    }
+
+    private static SmartClipboardReport emptyReport(ItemStack clipboard) {
+        return new SmartClipboardReport("", 0, 0, 0, false, SmartClipboardFilterState.isImportantOnly(clipboard), SmartClipboardScrollStorage.read(clipboard), List.of());
+    }
+
+    private static void openLoadingClient() {
+        try {
+            Class<?> client = Class.forName("com.createcolonylogistics.client.SmartClipboardClient");
+            client.getMethod("openLoading").invoke(null);
+        } catch (ReflectiveOperationException | RuntimeException ignored) {
+            // Client-only bridge; no-op if invoked in an unexpected environment.
+        }
     }
 
     private void linkMineColoniesClipboardContext(ServerPlayer player, InteractionHand hand, UseOnContext context) {
