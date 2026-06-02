@@ -636,11 +636,14 @@ public final class RequestAnalysisService {
     private static RequestReportEntry inspectRequest(ServerLevel level, IColony colony, IBuilding building, IRequest<?> request, ItemStack requestedStack, boolean important, WorkerGroups workerGroups) {
         boolean minimumStockRequest = isMinimumStockRequest(request);
         boolean domumRequest = DomumOrnamentumRequestInspector.isDomumOrnamentumStack(requestedStack);
+        Optional<DomumOrnamentumRequestInspector.CutterRecipeMatch> cutterMatch = domumRequest
+                ? DomumOrnamentumRequestInspector.findArchitectsCutterMatch(level, requestedStack)
+                : Optional.empty();
         ColonyProductionInspector.ProductionKnowledge knowledge = domumRequest
                 ? ColonyProductionInspector.inspect(colony, level, requestedStack)
                 : new ColonyProductionInspector.ProductionKnowledge(Collections.emptyList(), Collections.emptyList());
         Optional<ResourceLocation> cutterRecipe = domumRequest
-                ? DomumOrnamentumRequestInspector.findArchitectsCutterMatch(level, requestedStack).map(DomumOrnamentumRequestInspector.CutterRecipeMatch::recipeId)
+                ? cutterMatch.map(DomumOrnamentumRequestInspector.CutterRecipeMatch::recipeId)
                 : Optional.empty();
         // Pipeline priority: keep MineColonies' own request graph authoritative.
         // Synthetic Domum Ornamentum cutter inputs are only supplemental when the
@@ -654,7 +657,7 @@ public final class RequestAnalysisService {
         }
         List<ItemStack> displayStacks = displayStacks(request, requestedStack);
         List<SmartInfoMatchKey> smartInfoKeys = domumRequest
-                ? smartInfoKeys(request, requestedStack, displayStacks, tree)
+                ? smartInfoKeys(request, requestedStack, displayStacks, tree, cutterMatch.map(DomumOrnamentumRequestInspector.CutterRecipeMatch::assembledOutput))
                 : List.of();
 
         return new RequestReportEntry(
@@ -683,12 +686,13 @@ public final class RequestAnalysisService {
         );
     }
 
-    private static List<SmartInfoMatchKey> smartInfoKeys(IRequest<?> request, ItemStack requestedStack, List<ItemStack> displayStacks, List<RequestTreeNode> tree) {
+    private static List<SmartInfoMatchKey> smartInfoKeys(IRequest<?> request, ItemStack requestedStack, List<ItemStack> displayStacks, List<RequestTreeNode> tree, Optional<ItemStack> assembledOutput) {
         List<SmartInfoMatchKey> keys = new ArrayList<>();
         addStackKeys(keys, requestedStack, SmartClipboardReport.SMART_INFO_PRIORITY_EXACT);
         addKey(keys, SmartClipboardReport.domumFingerprintKey(requestedStack), SmartClipboardReport.SMART_INFO_PRIORITY_FINGERPRINT);
         DomumOrnamentumRequestInspector.materializedRequestedStack(request)
                 .ifPresent(stack -> addStackKeys(keys, stack, SmartClipboardReport.SMART_INFO_PRIORITY_EXACT));
+        assembledOutput.ifPresent(stack -> addStackKeys(keys, stack, SmartClipboardReport.SMART_INFO_PRIORITY_EXACT));
         for (ItemStack stack : displayStacks) {
             addStackKeys(keys, stack, SmartClipboardReport.SMART_INFO_PRIORITY_DISPLAY);
         }

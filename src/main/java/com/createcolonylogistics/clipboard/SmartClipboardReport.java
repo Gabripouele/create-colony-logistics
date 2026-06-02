@@ -240,7 +240,8 @@ public record SmartClipboardReport(
     private static boolean isSmartInfoEntry(Entry entry) {
         return entry.doBlockId().startsWith("domum_ornamentum:")
                 && (entry.cutterRecipeId().isPresent()
-                || DomumOrnamentumRequestInspector.isMaterializedArchitectsCutterOutput(entry.requestedStack()));
+                || DomumOrnamentumRequestInspector.isMaterializedArchitectsCutterOutput(entry.requestedStack())
+                || DomumOrnamentumRequestInspector.hasArchitectsCutterMetadata(entry.requestedStack()));
     }
 
     private static String shortenFingerprint(String fingerprint) {

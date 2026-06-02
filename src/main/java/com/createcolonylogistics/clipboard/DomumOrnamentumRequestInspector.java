@@ -203,6 +203,57 @@ public final class DomumOrnamentumRequestInspector {
         }
     }
 
+    public static boolean hasArchitectsCutterMetadata(ItemStack stack) {
+        if (stack.isEmpty() || !isDomumOrnamentumStack(stack)) {
+            return false;
+        }
+
+        try {
+            Object texturedBlock = domumBlock(stack);
+            if (texturedBlock == null || texturedBlockComponents(texturedBlock).isEmpty()) {
+                return false;
+            }
+
+            Object textureData = materialTextureData(stack);
+            return textureData != null && !materialTextureDataIsEmpty(textureData);
+        } catch (RuntimeException | LinkageError | ReflectiveOperationException ignored) {
+            return false;
+        }
+    }
+
+    public static boolean sameMaterializedDomumOutput(ItemStack left, ItemStack right) {
+        if (left.isEmpty() || right.isEmpty() || !itemId(left).equals(itemId(right))) {
+            return false;
+        }
+        if (ItemStack.isSameItemSameComponents(left, right)) {
+            return true;
+        }
+        if (!isDomumOrnamentumStack(left) || !isDomumOrnamentumStack(right)) {
+            return false;
+        }
+
+        try {
+            Object leftBlock = domumBlock(left);
+            Object rightBlock = domumBlock(right);
+            if (leftBlock == null || rightBlock == null) {
+                return false;
+            }
+            if (texturedBlockComponents(leftBlock).size() != texturedBlockComponents(rightBlock).size()) {
+                return false;
+            }
+            Object leftTexture = materialTextureData(left);
+            Object rightTexture = materialTextureData(right);
+            if (leftTexture == null || rightTexture == null
+                    || materialTextureDataIsEmpty(leftTexture)
+                    || materialTextureDataIsEmpty(rightTexture)) {
+                return false;
+            }
+            return texturedComponents(leftTexture).equals(texturedComponents(rightTexture));
+        } catch (RuntimeException | LinkageError | ReflectiveOperationException ignored) {
+            return false;
+        }
+    }
+
     private static boolean isSameMaterializedCutterOutput(ItemStack assembled, ItemStack requestedStack, int materialSlots) throws ReflectiveOperationException {
         if (assembled.isEmpty() || requestedStack.isEmpty() || !itemId(assembled).equals(itemId(requestedStack))) {
             return false;

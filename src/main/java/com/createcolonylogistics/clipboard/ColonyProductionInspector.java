@@ -19,9 +19,9 @@ public final class ColonyProductionInspector {
     public static ProductionKnowledge inspect(IColony colony, Level level, ItemStack requestedStack) {
         List<String> knownBy = new ArrayList<>();
         List<String> canLearn = new ArrayList<>();
-        List<IGenericRecipe> exactRecipes = DomumOrnamentumRequestInspector.findArchitectsCutterMatch(level, requestedStack)
-                .map(match -> List.of(match.genericRecipe()))
-                .orElseGet(List::of);
+        DomumOrnamentumRequestInspector.CutterRecipeMatch cutterMatch = DomumOrnamentumRequestInspector.findArchitectsCutterMatch(level, requestedStack)
+                .orElse(null);
+        List<IGenericRecipe> exactRecipes = cutterMatch == null ? List.of() : List.of(cutterMatch.genericRecipe());
 
         for (IBuilding building : colony.getBuildingManager().getBuildings().values()) {
             for (ICraftingBuildingModule module : building.getModulesByType(ICraftingBuildingModule.class)) {
@@ -30,7 +30,7 @@ public final class ColonyProductionInspector {
                 }
 
                 IRecipeStorage knownRecipe = safeGetFirstRecipe(module, requestedStack);
-                if (knownRecipe != null && ItemStack.isSameItemSameComponents(knownRecipe.getPrimaryOutput(), requestedStack)) {
+                if (knownRecipe != null && knownRecipeMatches(knownRecipe, requestedStack, cutterMatch)) {
                     knownBy.add(buildingLabel(building, module));
                 } else if (!exactRecipes.isEmpty() && safeCanLearn(module) && exactRecipes.stream().anyMatch(recipe -> safeIsRecipeCompatible(module, recipe))) {
                     canLearn.add(buildingLabel(building, module));
@@ -56,6 +56,17 @@ public final class ColonyProductionInspector {
         } catch (RuntimeException ignored) {
             return null;
         }
+    }
+
+    private static boolean knownRecipeMatches(IRecipeStorage knownRecipe, ItemStack requestedStack, DomumOrnamentumRequestInspector.CutterRecipeMatch cutterMatch) {
+        ItemStack primaryOutput = knownRecipe.getPrimaryOutput();
+        if (ItemStack.isSameItemSameComponents(primaryOutput, requestedStack)
+                || DomumOrnamentumRequestInspector.sameMaterializedDomumOutput(primaryOutput, requestedStack)) {
+            return true;
+        }
+        return cutterMatch != null
+                && (ItemStack.isSameItemSameComponents(primaryOutput, cutterMatch.assembledOutput())
+                || DomumOrnamentumRequestInspector.sameMaterializedDomumOutput(primaryOutput, cutterMatch.assembledOutput()));
     }
 
     private static boolean safeCanLearn(ICraftingBuildingModule module) {

@@ -1493,13 +1493,17 @@ public class SmartClipboardScreen extends Screen {
                 .withStyle(style -> style.withColor(SMART_INFO_HEADER_COLOR)));
         addApprovedSmartTooltipLine(lines, "screen.create_colony_logistics.smart_clipboard.tooltip.shape", humanizeDomumShape(entry));
         if (shouldShowTeachingFeedback(entry)) {
-            addWrappedApprovedSmartTooltipLine(lines, "screen.create_colony_logistics.smart_clipboard.tooltip.can_learn", entry.canLearnCombo());
+            addWrappedApprovedSmartTooltipLine(lines, "screen.create_colony_logistics.smart_clipboard.tooltip.can_learn", teachingFeedbackBuildings(entry));
         }
         return lines;
     }
 
     private boolean shouldShowTeachingFeedback(SmartClipboardReport.Entry entry) {
-        return !entry.exactComboAlreadyTaught() && !entry.canLearnCombo().isEmpty();
+        return !teachingFeedbackBuildings(entry).isEmpty();
+    }
+
+    private List<String> teachingFeedbackBuildings(SmartClipboardReport.Entry entry) {
+        return entry.canLearnCombo().isEmpty() ? entry.recipeKnownBy() : entry.canLearnCombo();
     }
 
     private void addApprovedSmartTooltipLine(List<Component> lines, String key, String value) {
@@ -2060,7 +2064,8 @@ public class SmartClipboardScreen extends Screen {
     private boolean isArchitectsCutterEntry(SmartClipboardReport.Entry entry) {
         return isDomumOrnamentumEntry(entry)
                 && (entry.cutterRecipeId().isPresent()
-                || DomumOrnamentumRequestInspector.isMaterializedArchitectsCutterOutput(entry.requestedStack()));
+                || DomumOrnamentumRequestInspector.isMaterializedArchitectsCutterOutput(entry.requestedStack())
+                || DomumOrnamentumRequestInspector.hasArchitectsCutterMetadata(entry.requestedStack()));
     }
 
     private enum Tab {
