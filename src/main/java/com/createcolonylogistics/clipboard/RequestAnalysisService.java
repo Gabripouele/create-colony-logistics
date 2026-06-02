@@ -67,7 +67,8 @@ public final class RequestAnalysisService {
             reported++;
         }
 
-        return new AnalysisResult(colony.getName(), colony.getID(), colony.getBuildingManager().getBuildings().size(), activeRequestCount, grouped, reported, capped);
+        return new AnalysisResult(colony.getName(), colony.getID(), colony.getBuildingManager().getBuildings().size(), activeRequestCount,
+                grouped, ColonyProductionInspector.inspectGlobal(colony, level), reported, capped);
     }
 
     /**
@@ -657,7 +658,7 @@ public final class RequestAnalysisService {
         }
         List<ItemStack> displayStacks = displayStacks(request, requestedStack);
         List<SmartInfoMatchKey> smartInfoKeys = domumRequest
-                ? smartInfoKeys(request, requestedStack, displayStacks, tree, cutterMatch.map(DomumOrnamentumRequestInspector.CutterRecipeMatch::assembledOutput))
+                ? smartInfoKeys(request, requestedStack, displayStacks, tree, cutterMatch)
                 : List.of();
 
         return new RequestReportEntry(
@@ -686,13 +687,16 @@ public final class RequestAnalysisService {
         );
     }
 
-    private static List<SmartInfoMatchKey> smartInfoKeys(IRequest<?> request, ItemStack requestedStack, List<ItemStack> displayStacks, List<RequestTreeNode> tree, Optional<ItemStack> assembledOutput) {
+    private static List<SmartInfoMatchKey> smartInfoKeys(IRequest<?> request, ItemStack requestedStack, List<ItemStack> displayStacks, List<RequestTreeNode> tree, Optional<DomumOrnamentumRequestInspector.CutterRecipeMatch> cutterMatch) {
         List<SmartInfoMatchKey> keys = new ArrayList<>();
         addStackKeys(keys, requestedStack, SmartClipboardReport.SMART_INFO_PRIORITY_EXACT);
         addKey(keys, SmartClipboardReport.domumFingerprintKey(requestedStack), SmartClipboardReport.SMART_INFO_PRIORITY_FINGERPRINT);
         DomumOrnamentumRequestInspector.materializedRequestedStack(request)
                 .ifPresent(stack -> addStackKeys(keys, stack, SmartClipboardReport.SMART_INFO_PRIORITY_EXACT));
-        assembledOutput.ifPresent(stack -> addStackKeys(keys, stack, SmartClipboardReport.SMART_INFO_PRIORITY_EXACT));
+        cutterMatch.ifPresent(match -> {
+            addStackKeys(keys, match.assembledOutput(), SmartClipboardReport.SMART_INFO_PRIORITY_OUTPUT);
+            addKey(keys, SmartClipboardReport.recipeOutputKey(match.recipeId().toString(), match.assembledOutput()), SmartClipboardReport.SMART_INFO_PRIORITY_OUTPUT);
+        });
         for (ItemStack stack : displayStacks) {
             addStackKeys(keys, stack, SmartClipboardReport.SMART_INFO_PRIORITY_DISPLAY);
         }
@@ -763,7 +767,8 @@ public final class RequestAnalysisService {
         addKey(keys, SmartClipboardReport.exactStackKey(stack), priority);
         addKey(keys, SmartClipboardReport.resourceStackKey(stack), Math.max(priority, SmartClipboardReport.SMART_INFO_PRIORITY_RESOURCE));
         if (DomumOrnamentumRequestInspector.isDomumOrnamentumStack(stack)) {
-            addKey(keys, SmartClipboardReport.domumFingerprintKey(stack), Math.min(priority, SmartClipboardReport.SMART_INFO_PRIORITY_FINGERPRINT));
+            addKey(keys, SmartClipboardReport.domumMaterialKey(stack), Math.max(priority, SmartClipboardReport.SMART_INFO_PRIORITY_MATERIAL));
+            addKey(keys, SmartClipboardReport.domumFingerprintKey(stack), Math.max(priority, SmartClipboardReport.SMART_INFO_PRIORITY_FINGERPRINT));
         }
     }
 
@@ -1342,7 +1347,21 @@ public final class RequestAnalysisService {
         }
     }
 
-    public record AnalysisResult(String colonyName, int colonyId, int buildingCount, int activeRequestCount, Map<String, List<RequestReportEntry>> groupedEntries, int reportedCount, boolean capped) {
+    public record AnalysisResult(String colonyName, int colonyId, int buildingCount, int activeRequestCount,
+                                 Map<String, List<RequestReportEntry>> groupedEntries,
+                                 List<ProductionInfo> productionIndex,
+                                 int reportedCount,
+                                 boolean capped) {
+    }
+
+    public record ProductionInfo(
+            ItemStack stack,
+            List<String> knownBy,
+            List<String> canLearn,
+            Optional<ResourceLocation> recipeId,
+            Optional<ResourceLocation> doBlockId,
+            List<SmartInfoMatchKey> keys
+    ) {
     }
 
     public record RequestReportEntry(

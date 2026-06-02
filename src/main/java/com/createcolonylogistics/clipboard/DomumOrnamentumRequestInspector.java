@@ -57,6 +57,40 @@ public final class DomumOrnamentumRequestInspector {
         return itemId(stack) + "|" + stack.getComponentsPatch();
     }
 
+    public static Optional<String> canonicalMaterialKey(ItemStack stack) {
+        if (stack.isEmpty() || !isDomumOrnamentumStack(stack)) {
+            return Optional.empty();
+        }
+
+        try {
+            Object texturedBlock = domumBlock(stack);
+            if (texturedBlock == null || texturedBlockComponents(texturedBlock).isEmpty()) {
+                return Optional.empty();
+            }
+            Object textureData = materialTextureData(stack);
+            if (textureData == null || materialTextureDataIsEmpty(textureData)) {
+                return Optional.empty();
+            }
+            Map<?, ?> texturedComponents = texturedComponents(textureData);
+            if (texturedComponents.isEmpty()) {
+                return Optional.empty();
+            }
+            List<String> componentKeys = new ArrayList<>();
+            for (Object component : texturedBlockComponents(texturedBlock)) {
+                Object componentId = componentId(component);
+                Object material = texturedComponents.get(componentId);
+                String materialId = material instanceof Block block
+                        ? BuiltInRegistries.BLOCK.getKey(block).toString()
+                        : String.valueOf(material);
+                componentKeys.add(componentId + "=" + materialId);
+            }
+            componentKeys.sort(String::compareTo);
+            return Optional.of(itemId(stack) + "|" + String.join(";", componentKeys));
+        } catch (RuntimeException | LinkageError | ReflectiveOperationException ignored) {
+            return Optional.empty();
+        }
+    }
+
     public static Optional<ItemStack> materializedRequestedStack(IRequest<?> request) {
         try {
             Class<?> util = Class.forName("com.minecolonies.core.util.DomumOrnamentumUtils");

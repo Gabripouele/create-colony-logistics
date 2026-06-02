@@ -20,21 +20,26 @@ public record SmartClipboardReport(
         boolean capped,
         boolean importantOnly,
         List<ItemStack> resourceScrolls,
+        List<ProductionInfo> productionIndex,
         List<SmartInfoIndexEntry> smartInfoIndex,
         List<Entry> entries
 ) {
-    public static final int SMART_INFO_PRIORITY_FINGERPRINT = 0;
+    public static final int SMART_INFO_PRIORITY_REQUEST_LINK = 0;
     public static final int SMART_INFO_PRIORITY_EXACT = 10;
-    public static final int SMART_INFO_PRIORITY_RESOURCE = 20;
-    public static final int SMART_INFO_PRIORITY_DISPLAY = 30;
+    public static final int SMART_INFO_PRIORITY_RESOURCE = 15;
+    public static final int SMART_INFO_PRIORITY_OUTPUT = 20;
+    public static final int SMART_INFO_PRIORITY_MATERIAL = 25;
+    public static final int SMART_INFO_PRIORITY_FINGERPRINT = 30;
+    public static final int SMART_INFO_PRIORITY_DISPLAY = 35;
     public static final int SMART_INFO_PRIORITY_TREE_PARENT = 40;
-    public static final int SMART_INFO_PRIORITY_REQUEST_TOKEN = 50;
+    public static final int SMART_INFO_PRIORITY_REQUEST_TOKEN = SMART_INFO_PRIORITY_REQUEST_LINK;
     public static final int SMART_INFO_PRIORITY_ALTERNATIVE = 70;
+    public static final int SMART_INFO_PRIORITY_SEMANTIC = 80;
     public static final int SMART_INFO_PRIORITY_ITEM_ID = 100;
 
     public SmartClipboardReport(String colonyName, int colonyId, int buildingCount, int activeRequestCount, boolean capped, boolean importantOnly,
                                 List<ItemStack> resourceScrolls, List<Entry> entries) {
-        this(colonyName, colonyId, buildingCount, activeRequestCount, capped, importantOnly, resourceScrolls, buildSmartInfoIndex(entries), entries);
+        this(colonyName, colonyId, buildingCount, activeRequestCount, capped, importantOnly, resourceScrolls, List.of(), buildSmartInfoIndex(entries), entries);
     }
 
     public static SmartClipboardReport fromAnalysis(RequestAnalysisService.AnalysisResult result) {
@@ -57,8 +62,24 @@ public record SmartClipboardReport(
                 result.capped(),
                 importantOnly,
                 resourceScrolls.stream().map(ItemStack::copy).toList(),
+                result.productionIndex().stream()
+                        .map(SmartClipboardReport::fromProductionInfo)
+                        .toList(),
                 buildSmartInfoIndex(entries),
                 entries
+        );
+    }
+
+    private static ProductionInfo fromProductionInfo(RequestAnalysisService.ProductionInfo info) {
+        return new ProductionInfo(
+                info.stack().copy(),
+                List.copyOf(info.knownBy()),
+                List.copyOf(info.canLearn()),
+                info.recipeId().map(Object::toString),
+                info.doBlockId().map(Object::toString).orElse(""),
+                info.keys().stream()
+                        .map(key -> new SmartInfoKey(key.key(), key.priority()))
+                        .toList()
         );
     }
 
@@ -119,6 +140,11 @@ public record SmartClipboardReport(
         for (int i = 0; i < scrollCount; i++) {
             resourceScrolls.add(ItemStack.OPTIONAL_STREAM_CODEC.decode(buffer));
         }
+        int productionCount = buffer.readVarInt();
+        List<ProductionInfo> productionIndex = new ArrayList<>(productionCount);
+        for (int i = 0; i < productionCount; i++) {
+            productionIndex.add(ProductionInfo.decode(buffer));
+        }
         int entryCount = buffer.readVarInt();
         List<Entry> entries = new ArrayList<>(entryCount);
         for (int i = 0; i < entryCount; i++) {
@@ -129,7 +155,7 @@ public record SmartClipboardReport(
         for (int i = 0; i < indexCount; i++) {
             smartInfoIndex.add(SmartInfoIndexEntry.decode(buffer));
         }
-        return new SmartClipboardReport(colonyName, colonyId, buildingCount, activeRequestCount, capped, importantOnly, resourceScrolls, smartInfoIndex, entries);
+        return new SmartClipboardReport(colonyName, colonyId, buildingCount, activeRequestCount, capped, importantOnly, resourceScrolls, productionIndex, smartInfoIndex, entries);
     }
 
     public void encode(RegistryFriendlyByteBuf buffer) {
@@ -142,6 +168,10 @@ public record SmartClipboardReport(
         buffer.writeVarInt(resourceScrolls.size());
         for (ItemStack scroll : resourceScrolls) {
             ItemStack.OPTIONAL_STREAM_CODEC.encode(buffer, scroll);
+        }
+        buffer.writeVarInt(productionIndex.size());
+        for (ProductionInfo productionInfo : productionIndex) {
+            productionInfo.encode(buffer);
         }
         buffer.writeVarInt(entries.size());
         for (Entry entry : entries) {
@@ -161,6 +191,13 @@ public record SmartClipboardReport(
         return stack.isEmpty() ? "" : "resource:" + stack.getDescriptionId() + "-" + stack.getComponentsPatch().hashCode();
     }
 
+    public static String resourceStackKey(String resourceKey) {
+        if (resourceKey == null || resourceKey.isBlank()) {
+            return "";
+        }
+        return resourceKey.startsWith("resource:") ? resourceKey : "resource:" + resourceKey;
+    }
+
     public static String domumFingerprintKey(ItemStack stack) {
         return stack.isEmpty() || !DomumOrnamentumRequestInspector.isDomumOrnamentumStack(stack)
                 ? ""
@@ -169,6 +206,26 @@ public record SmartClipboardReport(
 
     public static String domumFingerprintKey(String fingerprint) {
         return fingerprint == null || fingerprint.isBlank() ? "" : "fingerprint:" + fingerprint;
+    }
+
+    public static String domumMaterialKey(ItemStack stack) {
+        return stack.isEmpty() ? "" : DomumOrnamentumRequestInspector.canonicalMaterialKey(stack)
+                .map(SmartClipboardReport::domumMaterialKey)
+                .orElse("");
+    }
+
+    public static String domumMaterialKey(String materialKey) {
+        return materialKey == null || materialKey.isBlank() ? "" : "material:" + materialKey;
+    }
+
+    public static String recipeOutputKey(String recipeId, ItemStack output) {
+        return recipeId == null || recipeId.isBlank() || output.isEmpty()
+                ? ""
+                : "recipe-output:" + recipeId + "|" + exactStackKey(output);
+    }
+
+    public static String recipeKey(String recipeId) {
+        return recipeId == null || recipeId.isBlank() ? "" : "recipe:" + recipeId;
     }
 
     public static String requestTokenKey(String token) {
@@ -224,7 +281,8 @@ public record SmartClipboardReport(
             return;
         }
         if (DomumOrnamentumRequestInspector.isDomumOrnamentumStack(stack)) {
-            addIndex(index, seen, entryIndex, domumFingerprintKey(stack), Math.min(priority, SMART_INFO_PRIORITY_FINGERPRINT));
+            addIndex(index, seen, entryIndex, domumMaterialKey(stack), Math.max(priority, SMART_INFO_PRIORITY_MATERIAL));
+            addIndex(index, seen, entryIndex, domumFingerprintKey(stack), Math.max(priority, SMART_INFO_PRIORITY_FINGERPRINT));
         }
         addIndex(index, seen, entryIndex, exactStackKey(stack), priority);
         addIndex(index, seen, entryIndex, resourceStackKey(stack), Math.max(priority, SMART_INFO_PRIORITY_RESOURCE));
@@ -237,7 +295,7 @@ public record SmartClipboardReport(
         index.add(new SmartInfoIndexEntry(key, entryIndex, priority));
     }
 
-    private static boolean isSmartInfoEntry(Entry entry) {
+    public static boolean isSmartInfoEntry(Entry entry) {
         return entry.doBlockId().startsWith("domum_ornamentum:")
                 && (entry.cutterRecipeId().isPresent()
                 || DomumOrnamentumRequestInspector.isMaterializedArchitectsCutterOutput(entry.requestedStack())
@@ -371,6 +429,41 @@ public record SmartClipboardReport(
             buffer.writeUtf(key);
             buffer.writeVarInt(entryIndex);
             buffer.writeVarInt(priority);
+        }
+    }
+
+    public record ProductionInfo(
+            ItemStack stack,
+            List<String> knownBy,
+            List<String> canLearn,
+            Optional<String> recipeId,
+            String doBlockId,
+            List<SmartInfoKey> keys
+    ) {
+        private static ProductionInfo decode(RegistryFriendlyByteBuf buffer) {
+            ItemStack stack = ItemStack.OPTIONAL_STREAM_CODEC.decode(buffer);
+            List<String> knownBy = buffer.readList(FriendlyByteBuf::readUtf);
+            List<String> canLearn = buffer.readList(FriendlyByteBuf::readUtf);
+            Optional<String> recipeId = readOptionalString(buffer);
+            String doBlockId = buffer.readUtf();
+            int keyCount = buffer.readVarInt();
+            List<SmartInfoKey> keys = new ArrayList<>(keyCount);
+            for (int i = 0; i < keyCount; i++) {
+                keys.add(SmartInfoKey.decode(buffer));
+            }
+            return new ProductionInfo(stack, knownBy, canLearn, recipeId, doBlockId, keys);
+        }
+
+        private void encode(RegistryFriendlyByteBuf buffer) {
+            ItemStack.OPTIONAL_STREAM_CODEC.encode(buffer, stack);
+            buffer.writeCollection(knownBy, FriendlyByteBuf::writeUtf);
+            buffer.writeCollection(canLearn, FriendlyByteBuf::writeUtf);
+            writeOptionalString(buffer, recipeId);
+            buffer.writeUtf(doBlockId == null ? "" : doBlockId);
+            buffer.writeVarInt(keys.size());
+            for (SmartInfoKey key : keys) {
+                key.encode(buffer);
+            }
         }
     }
 
