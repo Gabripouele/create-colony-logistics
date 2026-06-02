@@ -85,7 +85,21 @@ public record SmartClipboardReport(
                 List.copyOf(entry.canLearn()),
                 Optional.ofNullable(entry.requestToken()).filter(token -> !token.isBlank()),
                 entry.requestTree().stream()
-                        .map(node -> new RequestTreeNode(node.depth(), node.stack().copy(), node.count(), node.quantityDisplay(), node.label()))
+                        .map(node -> new RequestTreeNode(
+                                node.depth(),
+                                node.stack().copy(),
+                                node.count(),
+                                node.quantityDisplay(),
+                                node.label(),
+                                node.requestToken(),
+                                node.parentToken(),
+                                node.requesterName(),
+                                node.requesterLocation(),
+                                node.requesterDimension(),
+                                node.resolverName(),
+                                node.requestType(),
+                                node.synthetic()
+                        ))
                         .toList(),
                 entry.smartInfoKeys().stream()
                         .map(key -> new SmartInfoKey(key.key(), key.priority()))
@@ -364,7 +378,15 @@ public record SmartClipboardReport(
             ItemStack stack,
             int count,
             String quantityDisplay,
-            String label
+            String label,
+            Optional<String> requestToken,
+            Optional<String> parentToken,
+            Optional<String> requesterName,
+            Optional<BlockPos> requesterLocation,
+            Optional<String> requesterDimension,
+            Optional<String> resolverName,
+            String requestType,
+            boolean synthetic
     ) {
         private static RequestTreeNode decode(RegistryFriendlyByteBuf buffer) {
             return new RequestTreeNode(
@@ -372,7 +394,15 @@ public record SmartClipboardReport(
                     ItemStack.OPTIONAL_STREAM_CODEC.decode(buffer),
                     buffer.readVarInt(),
                     buffer.readUtf(),
-                    buffer.readUtf()
+                    buffer.readUtf(),
+                    readOptionalString(buffer),
+                    readOptionalString(buffer),
+                    readOptionalString(buffer),
+                    readOptionalBlockPos(buffer),
+                    readOptionalString(buffer),
+                    readOptionalString(buffer),
+                    buffer.readUtf(),
+                    buffer.readBoolean()
             );
         }
 
@@ -382,6 +412,14 @@ public record SmartClipboardReport(
             buffer.writeVarInt(count);
             buffer.writeUtf(quantityDisplay);
             buffer.writeUtf(label);
+            writeOptionalString(buffer, requestToken);
+            writeOptionalString(buffer, parentToken);
+            writeOptionalString(buffer, requesterName);
+            writeOptionalBlockPos(buffer, requesterLocation);
+            writeOptionalString(buffer, requesterDimension);
+            writeOptionalString(buffer, resolverName);
+            buffer.writeUtf(requestType == null ? "" : requestType);
+            buffer.writeBoolean(synthetic);
         }
     }
 

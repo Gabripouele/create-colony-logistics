@@ -12,6 +12,7 @@ import com.minecolonies.api.colony.requestsystem.requestable.IStackBasedTask;
 import com.minecolonies.api.colony.requestsystem.requestable.MinimumStack;
 import com.minecolonies.api.colony.requestsystem.token.IToken;
 import com.minecolonies.api.colony.requestsystem.manager.IRequestManager;
+import com.minecolonies.api.colony.requestsystem.resolver.IRequestResolver;
 import net.minecraft.core.BlockPos;
 import net.minecraft.core.registries.BuiltInRegistries;
 import net.minecraft.network.chat.Component;
@@ -785,10 +786,10 @@ public final class RequestAnalysisService {
             return List.of();
         }
         List<RequestTreeNode> nodes = new ArrayList<>();
-        nodes.add(new RequestTreeNode(0, requestedStack.copy(), requestedStack.getCount(), "x" + Math.max(1, requestedStack.getCount()), requestedStack.getHoverName().getString()));
+        nodes.add(RequestTreeNode.synthetic(0, requestedStack.copy(), requestedStack.getCount(), "x" + Math.max(1, requestedStack.getCount()), requestedStack.getHoverName().getString()));
         for (DomumOrnamentumRequestInspector.IngredientRequirement requirement : requirements) {
             ItemStack stack = requirement.stack().copyWithCount(requirement.count());
-            nodes.add(new RequestTreeNode(1, stack, requirement.count(), "x" + Math.max(1, requirement.count()), stack.getHoverName().getString()));
+            nodes.add(RequestTreeNode.synthetic(1, stack, requirement.count(), "x" + Math.max(1, requirement.count()), stack.getHoverName().getString()));
         }
         return nodes;
     }
@@ -1120,11 +1121,119 @@ public final class RequestAnalysisService {
     }
 
     private static Optional<String> resolverName(IColony colony, IRequest<?> request) {
+        return resolverName(colony.getRequestManager(), request);
+    }
+
+    private static Optional<String> resolverName(IRequestManager manager, IRequest<?> request) {
         try {
-            Object resolver = colony.getRequestManager().getResolverForRequest(request.getId());
-            return Optional.ofNullable(resolver).map(value -> value.getClass().getSimpleName());
+            Object resolver = manager.getResolverForRequest(request.getId());
+            if (resolver == null) {
+                return Optional.empty();
+            }
+            Optional<String> displayName = resolverDisplayName(manager, request, resolver);
+            Optional<String> workerName = displayName.flatMap(RequestAnalysisService::displayWorkerPart);
+            if (workerName.isPresent()) {
+                return workerName;
+            }
+            Optional<String> requesterName = displayName.flatMap(RequestAnalysisService::displayRequesterPart);
+            if (requesterName.isPresent()) {
+                return requesterName;
+            }
+            return friendlyResolverFallback(resolver.getClass().getSimpleName());
         } catch (RuntimeException ignored) {
             return Optional.empty();
+        }
+    }
+
+    private static Optional<String> resolverDisplayName(IRequestManager manager, IRequest<?> request, Object resolver) {
+        if (!(resolver instanceof IRequestResolver<?> requestResolver)) {
+            return Optional.empty();
+        }
+        try {
+            return Optional.ofNullable(requestResolver.getRequesterDisplayName(manager, request))
+                    .map(Component::getString)
+                    .filter(value -> !value.isBlank());
+        } catch (RuntimeException ignored) {
+            return Optional.empty();
+        }
+    }
+
+    private static Optional<String> displayWorkerPart(String displayName) {
+        int separator = displayName.indexOf(':');
+        if (separator < 0) {
+            return Optional.empty();
+        }
+        String worker = displayName.substring(separator + 1).trim();
+        return isPlayerFacingName(worker) ? Optional.of(worker) : Optional.empty();
+    }
+
+    private static Optional<String> displayRequesterPart(String displayName) {
+        int separator = displayName.indexOf(':');
+        String requester = separator >= 0 ? displayName.substring(0, separator).trim() : displayName.trim();
+        if (!isUsefulResolverLabel(requester)) {
+            return Optional.empty();
+        }
+        return Optional.of(humanizeBuildingName(requester));
+    }
+
+    private static boolean isUsefulResolverLabel(String value) {
+        if (!isPlayerFacingName(value)) {
+            return false;
+        }
+        String lower = value.toLowerCase();
+        return !lower.contains("resolver")
+                && !lower.contains("production")
+                && !lower.contains("standard")
+                && !lower.contains("public worker")
+                && !lower.contains("private worker");
+    }
+
+    private static Optional<String> friendlyResolverFallback(String resolverClassName) {
+        if (resolverClassName == null || resolverClassName.isBlank()) {
+            return Optional.empty();
+        }
+        String lower = resolverClassName.toLowerCase();
+        if (lower.contains("player")) {
+            return Optional.of("Player");
+        }
+        if (lower.contains("retry")) {
+            return Optional.of("Pending");
+        }
+        if (lower.contains("warehouse") || lower.contains("delivery") || lower.contains("pickup")) {
+            return Optional.of("Warehouse");
+        }
+        if (lower.contains("crafting") || lower.contains("station")) {
+            return Optional.of("Crafter");
+        }
+        if (lower.contains("building")) {
+            return Optional.of("Builder");
+        }
+        return Optional.empty();
+    }
+
+    private static Optional<BlockPos> requesterLocation(IRequest<?> request) {
+        try {
+            return Optional.ofNullable(request.getRequester())
+                    .map(requester -> requester.getLocation().getInDimensionLocation());
+        } catch (RuntimeException ignored) {
+            return Optional.empty();
+        }
+    }
+
+    private static Optional<String> parentToken(IRequest<?> request) {
+        try {
+            return request.hasParent() ? Optional.ofNullable(request.getParent()).map(Object::toString) : Optional.empty();
+        } catch (RuntimeException ignored) {
+            return Optional.empty();
+        }
+    }
+
+    private static String requestType(IRequest<?> request) {
+        try {
+            Object requestable = request.getRequest();
+            return requestable == null ? className(request) : requestable.getClass().getSimpleName();
+        } catch (RuntimeException ignored) {
+            return className(request);
         }
     }
 
@@ -1134,7 +1243,21 @@ public final class RequestAnalysisService {
             return nodes;
         }
         ItemStack displayStack = requestDisplayStack(request);
-        nodes.add(new RequestTreeNode(depth, displayStack, requestCount(request), quantityDisplay(request, displayStack), request.getShortDisplayString().getString()));
+        nodes.add(new RequestTreeNode(
+                depth,
+                displayStack,
+                requestCount(request),
+                quantityDisplay(request, displayStack),
+                request.getShortDisplayString().getString(),
+                Optional.ofNullable(request.getId()).map(Object::toString),
+                parentToken(request),
+                Optional.of(requesterDisplayName(manager, request, null)),
+                requesterLocation(request),
+                dimensionName(request),
+                resolverName(manager, request),
+                requestType(request),
+                false
+        ));
         if (!request.hasChildren()) {
             return nodes;
         }
@@ -1252,7 +1375,32 @@ public final class RequestAnalysisService {
             ItemStack stack,
             int count,
             String quantityDisplay,
-            String label
+            String label,
+            Optional<String> requestToken,
+            Optional<String> parentToken,
+            Optional<String> requesterName,
+            Optional<BlockPos> requesterLocation,
+            Optional<String> requesterDimension,
+            Optional<String> resolverName,
+            String requestType,
+            boolean synthetic
     ) {
+        private static RequestTreeNode synthetic(int depth, ItemStack stack, int count, String quantityDisplay, String label) {
+            return new RequestTreeNode(
+                    depth,
+                    stack,
+                    count,
+                    quantityDisplay,
+                    label,
+                    Optional.empty(),
+                    Optional.empty(),
+                    Optional.empty(),
+                    Optional.empty(),
+                    Optional.empty(),
+                    Optional.empty(),
+                    "synthetic",
+                    true
+            );
+        }
     }
 }

@@ -114,6 +114,7 @@ public class SmartClipboardScreen extends Screen {
     private static final int SECONDARY_TEXT = 0xFF8A6B4F;
     private static final int MUTED_TEXT = 0xFFA88F73;
     private static final int QUANTITY_TEXT = 0xFF7C5F45;
+    private static final String DELIVERY_ARROW_TEXT = ">";
     private static final int DIVIDER_LINE = 0xFF7B5E46;
     private static final int SMART_INFO_HEADER_COLOR = 0xA0A0A0;
     private static final int SMART_INFO_LABEL_COLOR = 0xFFF2D78C;
@@ -411,20 +412,16 @@ public class SmartClipboardScreen extends Screen {
         }
         int glyphX = Math.min(x, lineRight - 34);
         int color = resource.deliveryIndicator() ? 0xFF4F8F5A : 0xFF6D84A8;
+        int amountX;
         if (resource.deliveryIndicator()) {
-            drawDeliveryGlyph(graphics, glyphX, y + 2, color);
+            graphics.drawString(font, DELIVERY_ARROW_TEXT, glyphX, y, color, false);
+            amountX = glyphX + font.width(DELIVERY_ARROW_TEXT) + 4;
         } else {
             drawWarehouseGlyph(graphics, glyphX, y + 2, color);
+            amountX = glyphX + 11;
         }
-        int amountX = glyphX + 11;
         int amountWidth = Math.max(0, lineRight - amountX);
         graphics.drawString(font, truncate(Component.literal(String.valueOf(resource.deliveryOrWarehouseAmount())), amountWidth), amountX, y, SECONDARY_TEXT, false);
-    }
-
-    private void drawDeliveryGlyph(GuiGraphics graphics, int x, int y, int color) {
-        graphics.fill(x, y + 3, x + 7, y + 5, color);
-        graphics.fill(x + 5, y + 1, x + 7, y + 7, color);
-        graphics.fill(x + 7, y + 2, x + 9, y + 6, color);
     }
 
     private void drawWarehouseGlyph(GuiGraphics graphics, int x, int y, int color) {
@@ -479,12 +476,17 @@ public class SmartClipboardScreen extends Screen {
         drawLabelValue(graphics, textX, y + 15,
                 Component.translatable("screen.create_colony_logistics.smart_clipboard.requester_label"),
                 Component.literal(displayRequester(entry)), requesterTextWidth);
+        if (expanded.contains(index)) {
+            parentResolverDisplay(entry).ifPresent(resolver -> drawLabelValue(graphics, textX, y + 25,
+                    Component.translatable("screen.create_colony_logistics.smart_clipboard.resolver_label"),
+                    Component.literal(resolver), requesterTextWidth));
+        }
         if (entryCancelable(entry)) {
             renderCancelAction(graphics, entry, x, y, width, mouseX, mouseY);
         }
 
         if (expanded.contains(index) && hasExpandedDetails(entry)) {
-            int detailY = y + EXPANDED_TOP_PADDING;
+            int detailY = expandedDetailStartY(entry, y);
             detailY = value(graphics, x + 8, detailY, "screen.create_colony_logistics.smart_clipboard.type",
                     entry.minimumStockRequest() ? Component.translatable("screen.create_colony_logistics.smart_clipboard.minimum_stock_request").getString() : null);
             if (!entry.minimumStockRequest()) {
@@ -555,8 +557,7 @@ public class SmartClipboardScreen extends Screen {
         String quantity = node.quantityDisplay() == null || node.quantityDisplay().isBlank()
                 ? "x" + Math.max(1, node.count())
                 : node.quantityDisplay();
-        int nameColor = node.depth() <= 1 ? PRIMARY_TEXT : SECONDARY_TEXT;
-        drawComponentWithQuantity(graphics, x, y, name, quantity, width, nameColor);
+        drawComponentWithQuantity(graphics, x, y, name, quantity, width, PRIMARY_TEXT);
     }
 
     private void drawComponentWithQuantity(GuiGraphics graphics, int x, int y, Component name, String quantity, int width, int nameColor) {
@@ -589,15 +590,31 @@ public class SmartClipboardScreen extends Screen {
         if (!stack.isEmpty()) {
             graphics.renderItem(stack, x + indent + 9, y);
         }
-        drawTreeNodeText(graphics, x + indent + 28, y + 4, node, Math.max(40, leftPos + LIST_X + LIST_WIDTH - x - indent - 29));
-        return y + TREE_ROW_HEIGHT;
+        int textX = x + indent + 28;
+        int textWidth = Math.max(40, leftPos + LIST_X + LIST_WIDTH - x - indent - 29);
+        drawTreeNodeText(graphics, textX, y + 4, node, textWidth);
+        int metaY = y + 14;
+        Optional<String> requester = nodeRequesterDisplay(node);
+        if (requester.isPresent()) {
+            drawLabelValue(graphics, textX, metaY,
+                    Component.translatable("screen.create_colony_logistics.smart_clipboard.requester_label"),
+                    Component.literal(requester.get()), textWidth);
+            metaY += LINE_HEIGHT;
+        }
+        Optional<String> resolver = nodeResolverDisplay(node);
+        if (resolver.isPresent()) {
+            drawLabelValue(graphics, textX, metaY,
+                    Component.translatable("screen.create_colony_logistics.smart_clipboard.resolver_label"),
+                    Component.literal(resolver.get()), textWidth);
+        }
+        return y + dependencyRowHeight(node);
     }
 
     private int entryHeight(SmartClipboardReport.Entry entry, int index) {
         if (!expanded.contains(index) || !hasExpandedDetails(entry)) {
             return COLLAPSED_HEIGHT;
         }
-        int height = EXPANDED_TOP_PADDING;
+        int height = expandedDetailStartY(entry, 0);
         height += valueLineHeight(entry.minimumStockRequest()
                 ? Component.translatable("screen.create_colony_logistics.smart_clipboard.minimum_stock_request").getString()
                 : null);
@@ -606,7 +623,10 @@ public class SmartClipboardScreen extends Screen {
         }
         List<SmartClipboardReport.RequestTreeNode> dependencies = dependencyNodes(entry);
         if (!dependencies.isEmpty()) {
-            height += 2 + visibleDependencyIndexes(entry, index).size() * TREE_ROW_HEIGHT;
+            height += 2;
+            for (int nodeIndex : visibleDependencyIndexes(entry, index)) {
+                height += dependencyRowHeight(dependencies.get(nodeIndex));
+            }
         }
         return height + EXPANDED_BOTTOM_PADDING;
     }
@@ -1205,7 +1225,7 @@ public class SmartClipboardScreen extends Screen {
             SmartClipboardReport.Entry entry = report.entries().get(i);
             int cardHeight = entryHeight(entry, i);
             if (expanded.contains(i) && hasExpandedDetails(entry)) {
-                int detailY = y + EXPANDED_TOP_PADDING;
+                int detailY = expandedDetailStartY(entry, y);
                 detailY += valueLineHeight(entry.minimumStockRequest()
                         ? Component.translatable("screen.create_colony_logistics.smart_clipboard.minimum_stock_request").getString()
                         : null);
@@ -1227,7 +1247,7 @@ public class SmartClipboardScreen extends Screen {
                                 return true;
                             }
                         }
-                        detailY += TREE_ROW_HEIGHT;
+                        detailY += dependencyRowHeight(node);
                     }
                 }
             }
@@ -1396,9 +1416,17 @@ public class SmartClipboardScreen extends Screen {
                 graphics.renderTooltip(font, Component.literal(requesterText), mouseX, mouseY);
                 return;
             }
+            Optional<String> parentResolver = parentResolverDisplay(entry);
+            if (expanded.contains(i) && parentResolver.isPresent()) {
+                String resolverText = Component.translatable("screen.create_colony_logistics.smart_clipboard.resolver_label").getString() + parentResolver.get();
+                if (hoveredTruncatedText(mouseX, mouseY, x + 24, y + 25, requesterTextWidth, resolverText)) {
+                    graphics.renderTooltip(font, Component.literal(resolverText), mouseX, mouseY);
+                    return;
+                }
+            }
 
             if (expanded.contains(i) && hasExpandedDetails(entry)) {
-                int detailY = y + EXPANDED_TOP_PADDING;
+                int detailY = expandedDetailStartY(entry, y);
                 detailY += valueLineHeight(entry.minimumStockRequest()
                         ? Component.translatable("screen.create_colony_logistics.smart_clipboard.minimum_stock_request").getString()
                         : null);
@@ -1419,7 +1447,25 @@ public class SmartClipboardScreen extends Screen {
                             graphics.renderTooltip(font, Component.literal(text), mouseX, mouseY);
                             return;
                         }
-                        detailY += TREE_ROW_HEIGHT;
+                        int metaY = detailY + 14;
+                        Optional<String> requester = nodeRequesterDisplay(node);
+                        if (requester.isPresent()) {
+                            String requesterNodeText = Component.translatable("screen.create_colony_logistics.smart_clipboard.requester_label").getString() + requester.get();
+                            if (hoveredTruncatedText(mouseX, mouseY, textX, metaY, textWidth, requesterNodeText)) {
+                                graphics.renderTooltip(font, Component.literal(requesterNodeText), mouseX, mouseY);
+                                return;
+                            }
+                            metaY += LINE_HEIGHT;
+                        }
+                        Optional<String> resolver = nodeResolverDisplay(node);
+                        if (resolver.isPresent()) {
+                            String resolverText = Component.translatable("screen.create_colony_logistics.smart_clipboard.resolver_label").getString() + resolver.get();
+                            if (hoveredTruncatedText(mouseX, mouseY, textX, metaY, textWidth, resolverText)) {
+                                graphics.renderTooltip(font, Component.literal(resolverText), mouseX, mouseY);
+                                return;
+                            }
+                        }
+                        detailY += dependencyRowHeight(node);
                     }
                 }
             }
@@ -1602,8 +1648,52 @@ public class SmartClipboardScreen extends Screen {
 
     private boolean hasExpandedDetails(SmartClipboardReport.Entry entry) {
         return entry.minimumStockRequest()
+                || parentResolverDisplay(entry).isPresent()
                 || (!entry.minimumStockRequest() && entry.requestingWorkerName().filter(name -> !name.isBlank()).isPresent())
                 || !dependencyNodes(entry).isEmpty();
+    }
+
+    private int expandedDetailStartY(SmartClipboardReport.Entry entry, int rowY) {
+        return rowY + EXPANDED_TOP_PADDING + (parentResolverDisplay(entry).isPresent() ? LINE_HEIGHT : 0);
+    }
+
+    private int dependencyRowHeight(SmartClipboardReport.RequestTreeNode node) {
+        return TREE_ROW_HEIGHT + nodeMetadataLineCount(node) * LINE_HEIGHT;
+    }
+
+    private int nodeMetadataLineCount(SmartClipboardReport.RequestTreeNode node) {
+        int count = 0;
+        if (nodeResolverDisplay(node).isPresent()) {
+            count++;
+        }
+        if (nodeRequesterDisplay(node).isPresent()) {
+            count++;
+        }
+        return count;
+    }
+
+    private Optional<String> parentResolverDisplay(SmartClipboardReport.Entry entry) {
+        return entry.resolverName()
+                .map(this::humanizeResolver)
+                .filter(value -> value != null && !value.isBlank());
+    }
+
+    private Optional<String> nodeResolverDisplay(SmartClipboardReport.RequestTreeNode node) {
+        if (node.synthetic()) {
+            return Optional.empty();
+        }
+        return node.resolverName()
+                .map(this::humanizeResolver)
+                .filter(value -> value != null && !value.isBlank());
+    }
+
+    private Optional<String> nodeRequesterDisplay(SmartClipboardReport.RequestTreeNode node) {
+        if (node.synthetic()) {
+            return Optional.empty();
+        }
+        return node.requesterName()
+                .map(this::displayRequester)
+                .filter(value -> value != null && !value.isBlank() && !isUnknownHut(value));
     }
 
     private List<Integer> visibleDependencyIndexes(SmartClipboardReport.Entry entry, int entryIndex) {
@@ -1641,7 +1731,7 @@ public class SmartClipboardScreen extends Screen {
     }
 
     private boolean toggleDependencyAt(SmartClipboardReport.Entry entry, int entryIndex, double mouseY, int rowY) {
-        int y = rowY + EXPANDED_TOP_PADDING;
+        int y = expandedDetailStartY(entry, rowY);
         y += valueLineHeight(entry.minimumStockRequest()
                 ? Component.translatable("screen.create_colony_logistics.smart_clipboard.minimum_stock_request").getString()
                 : null);
@@ -1651,12 +1741,13 @@ public class SmartClipboardScreen extends Screen {
         y += 2;
         List<SmartClipboardReport.RequestTreeNode> dependencies = dependencyNodes(entry);
         for (int nodeIndex : visibleDependencyIndexes(entry, entryIndex)) {
+            SmartClipboardReport.RequestTreeNode node = dependencies.get(nodeIndex);
             int nodeY = y;
-            if (mouseY >= nodeY && mouseY < nodeY + TREE_ROW_HEIGHT && hasDependencyChildren(dependencies, nodeIndex)) {
+            if (mouseY >= nodeY && mouseY < nodeY + dependencyRowHeight(node) && hasDependencyChildren(dependencies, nodeIndex)) {
                 toggle(expandedDependencies, dependencyKey(entryIndex, nodeIndex));
                 return true;
             }
-            y += TREE_ROW_HEIGHT;
+            y += dependencyRowHeight(node);
         }
         return false;
     }
