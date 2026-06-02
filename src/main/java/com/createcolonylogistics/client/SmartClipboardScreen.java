@@ -1292,7 +1292,11 @@ public class SmartClipboardScreen extends Screen {
         List<String> keys = new ArrayList<>(stackLookupKeys(resource.stack()));
         keys.add(resource.resourceKey());
         SmartClipboardReport.Entry exact = smartInfoEntryForKeys(keys);
-        return exact != null ? exact : uniqueSmartInfoEntryForItem(resource.stack());
+        if (exact != null) {
+            return exact;
+        }
+        SmartClipboardReport.Entry domumMatch = uniqueSmartInfoEntryForDomumOutput(resource.stack());
+        return domumMatch != null ? domumMatch : uniqueSmartInfoEntryForItem(resource.stack());
     }
 
     private SmartClipboardReport.Entry smartInfoEntryForStack(ItemStack stack, SmartClipboardReport.Entry parentEntry) {
@@ -1376,6 +1380,40 @@ public class SmartClipboardScreen extends Screen {
             result = entry;
         }
         return result;
+    }
+
+    private SmartClipboardReport.Entry uniqueSmartInfoEntryForDomumOutput(ItemStack stack) {
+        if (stack.isEmpty() || !DomumOrnamentumRequestInspector.hasArchitectsCutterMetadata(stack)) {
+            return null;
+        }
+        SmartClipboardReport.Entry result = null;
+        for (SmartClipboardReport.Entry entry : report.entries()) {
+            if (!isArchitectsCutterEntry(entry) || !domumEntryMatchesStack(entry, stack)) {
+                continue;
+            }
+            if (result != null && result != entry) {
+                return null;
+            }
+            result = entry;
+        }
+        return result;
+    }
+
+    private boolean domumEntryMatchesStack(SmartClipboardReport.Entry entry, ItemStack stack) {
+        if (DomumOrnamentumRequestInspector.sameMaterializedDomumOutput(stack, entry.requestedStack())) {
+            return true;
+        }
+        for (ItemStack displayStack : entry.displayStacks()) {
+            if (DomumOrnamentumRequestInspector.sameMaterializedDomumOutput(stack, displayStack)) {
+                return true;
+            }
+        }
+        for (SmartClipboardReport.RequestTreeNode node : entry.requestTree()) {
+            if (DomumOrnamentumRequestInspector.sameMaterializedDomumOutput(stack, node.stack())) {
+                return true;
+            }
+        }
+        return false;
     }
 
     private String expandableReason(SmartClipboardReport.Entry entry) {
@@ -2238,7 +2276,7 @@ public class SmartClipboardScreen extends Screen {
                     ? resource.getAmountInDelivery()
                     : warehouseSnapshot.getOrDefault(resourceKey, 0);
             return new ResourceLine(stack, resource.getName(), missing, available, required, extra, delivery,
-                    SmartClipboardReport.resourceStackKey(stack), neededValueColor(missing), suppliedColor(available, required));
+                    resourceKey, neededValueColor(missing), suppliedColor(available, required));
         }
 
         private static String warehouseSnapshotKey(BuildingBuilderResource resource) {
