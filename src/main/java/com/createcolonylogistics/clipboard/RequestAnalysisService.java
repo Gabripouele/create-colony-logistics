@@ -651,6 +651,10 @@ public final class RequestAnalysisService {
                 tree = cutterTree;
             }
         }
+        List<ItemStack> displayStacks = displayStacks(request, requestedStack);
+        List<SmartInfoMatchKey> smartInfoKeys = domumRequest
+                ? smartInfoKeys(request, requestedStack, displayStacks, tree)
+                : List.of();
 
         return new RequestReportEntry(
                 requesterDisplayName(colony.getRequestManager(), request, building),
@@ -660,7 +664,7 @@ public final class RequestAnalysisService {
                 resolverName(colony, request),
                 request.getId().toString(),
                 requestedStack.copy(),
-                displayStacks(request, requestedStack),
+                displayStacks,
                 requestedStack.getHoverName(),
                 requestedStack.getCount(),
                 quantityDisplay(request, requestedStack),
@@ -673,8 +677,102 @@ public final class RequestAnalysisService {
                 !knowledge.knownBy().isEmpty(),
                 knowledge.knownBy(),
                 knowledge.canLearn(),
-                tree
+                tree,
+                smartInfoKeys
         );
+    }
+
+    private static List<SmartInfoMatchKey> smartInfoKeys(IRequest<?> request, ItemStack requestedStack, List<ItemStack> displayStacks, List<RequestTreeNode> tree) {
+        List<SmartInfoMatchKey> keys = new ArrayList<>();
+        addStackKeys(keys, requestedStack, SmartClipboardReport.SMART_INFO_PRIORITY_EXACT);
+        addKey(keys, SmartClipboardReport.domumFingerprintKey(requestedStack), SmartClipboardReport.SMART_INFO_PRIORITY_FINGERPRINT);
+        DomumOrnamentumRequestInspector.materializedRequestedStack(request)
+                .ifPresent(stack -> addStackKeys(keys, stack, SmartClipboardReport.SMART_INFO_PRIORITY_EXACT));
+        for (ItemStack stack : displayStacks) {
+            addStackKeys(keys, stack, SmartClipboardReport.SMART_INFO_PRIORITY_DISPLAY);
+        }
+        for (RequestTreeNode node : tree) {
+            addKey(keys, SmartClipboardReport.treeParentStackKey(node.stack()), SmartClipboardReport.SMART_INFO_PRIORITY_TREE_PARENT);
+        }
+        addKey(keys, SmartClipboardReport.requestTokenKey(request.getId().toString()), SmartClipboardReport.SMART_INFO_PRIORITY_REQUEST_TOKEN);
+        addRequestableStackKeys(keys, request);
+        return keys.stream().distinct().toList();
+    }
+
+    private static void addRequestableStackKeys(List<SmartInfoMatchKey> keys, IRequest<?> request) {
+        try {
+            addRequestableStackKeys(keys, request.getRequest());
+        } catch (RuntimeException ignored) {
+            // Optional MineColonies requestable details.
+        }
+        try {
+            request.getRequestOfType(com.minecolonies.api.colony.requestsystem.requestable.Stack.class)
+                    .ifPresent(stack -> addRequestableStackKeys(keys, stack));
+        } catch (RuntimeException ignored) {
+            // Optional MineColonies requestable details.
+        }
+        try {
+            request.getRequestOfType(com.minecolonies.api.colony.requestsystem.requestable.StackList.class)
+                    .ifPresent(stackList -> addRequestableStackKeys(keys, stackList));
+        } catch (RuntimeException ignored) {
+            // Optional MineColonies requestable details.
+        }
+    }
+
+    private static void addRequestableStackKeys(List<SmartInfoMatchKey> keys, Object requestable) {
+        if (requestable instanceof com.minecolonies.api.colony.requestsystem.requestable.Stack stackRequest) {
+            try {
+                addStackKeys(keys, stackRequest.getStack(), SmartClipboardReport.SMART_INFO_PRIORITY_EXACT);
+            } catch (RuntimeException ignored) {
+                // Optional MineColonies requestable details.
+            }
+            try {
+                for (ItemStack stack : stackRequest.getRequestedItems()) {
+                    addAlternativeStackKey(keys, stack);
+                }
+            } catch (RuntimeException ignored) {
+                // Optional MineColonies requestable details.
+            }
+        } else if (requestable instanceof com.minecolonies.api.colony.requestsystem.requestable.StackList stackListRequest) {
+            try {
+                for (ItemStack stack : stackListRequest.getStacks()) {
+                    addAlternativeStackKey(keys, stack);
+                }
+            } catch (RuntimeException ignored) {
+                // Optional MineColonies requestable details.
+            }
+            try {
+                for (ItemStack stack : stackListRequest.getRequestedItems()) {
+                    addAlternativeStackKey(keys, stack);
+                }
+            } catch (RuntimeException ignored) {
+                // Optional MineColonies requestable details.
+            }
+        }
+    }
+
+    private static void addStackKeys(List<SmartInfoMatchKey> keys, ItemStack stack, int priority) {
+        if (stack == null || stack.isEmpty()) {
+            return;
+        }
+        addKey(keys, SmartClipboardReport.exactStackKey(stack), priority);
+        addKey(keys, SmartClipboardReport.resourceStackKey(stack), Math.max(priority, SmartClipboardReport.SMART_INFO_PRIORITY_RESOURCE));
+        if (DomumOrnamentumRequestInspector.isDomumOrnamentumStack(stack)) {
+            addKey(keys, SmartClipboardReport.domumFingerprintKey(stack), Math.min(priority, SmartClipboardReport.SMART_INFO_PRIORITY_FINGERPRINT));
+        }
+    }
+
+    private static void addAlternativeStackKey(List<SmartInfoMatchKey> keys, ItemStack stack) {
+        if (stack == null || stack.isEmpty()) {
+            return;
+        }
+        addKey(keys, SmartClipboardReport.alternativeStackKey(stack), SmartClipboardReport.SMART_INFO_PRIORITY_ALTERNATIVE);
+    }
+
+    private static void addKey(List<SmartInfoMatchKey> keys, String key, int priority) {
+        if (key != null && !key.isBlank()) {
+            keys.add(new SmartInfoMatchKey(key, priority));
+        }
     }
 
     private static List<RequestTreeNode> cutterRequirementTree(ServerLevel level, IRequest<?> request, ItemStack requestedStack) {
@@ -1141,8 +1239,12 @@ public final class RequestAnalysisService {
             boolean exactComboTaught,
             List<String> knownBy,
             List<String> canLearn,
-            List<RequestTreeNode> requestTree
+            List<RequestTreeNode> requestTree,
+            List<SmartInfoMatchKey> smartInfoKeys
     ) {
+    }
+
+    public record SmartInfoMatchKey(String key, int priority) {
     }
 
     public record RequestTreeNode(

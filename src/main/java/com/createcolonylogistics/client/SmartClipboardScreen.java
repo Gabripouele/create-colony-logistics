@@ -385,11 +385,9 @@ public class SmartClipboardScreen extends Screen {
             int textWidth = Math.max(30, LIST_WIDTH - 22);
             graphics.renderItem(resource.stack(), x, y);
             graphics.drawString(font, truncate(Component.literal(sanitizeScrollLine(resource.name())), textWidth), x + 22, y + 1, PRIMARY_TEXT, false);
-            drawNeededLine(graphics, resource, x + 22, y + 11, textWidth);
+            int neededEndX = drawNeededLine(graphics, resource, x + 22, y + 11, textWidth);
+            drawResourceAvailabilityIndicator(graphics, resource, neededEndX, y + 11, x + LIST_WIDTH);
             graphics.drawString(font, truncate(Component.translatable("screen.create_colony_logistics.smart_clipboard.supplied", resource.available(), resource.required()), textWidth), x + 22, y + 21, resource.suppliedColor(), false);
-            if (resource.deliveryOrWarehouseAmount() > 0) {
-                graphics.drawString(font, truncate(Component.literal(String.valueOf(resource.deliveryOrWarehouseAmount())), 24), x + LIST_WIDTH - 24, y + 11, SECONDARY_TEXT, false);
-            }
             if (i < content.resources().size() - 1) {
                 graphics.fill(x + 22, y + RESOURCE_SEPARATOR_Y, x + LIST_WIDTH, y + RESOURCE_SEPARATOR_Y + 1, DIVIDER_LINE);
             }
@@ -398,11 +396,41 @@ public class SmartClipboardScreen extends Screen {
         return y;
     }
 
-    private void drawNeededLine(GuiGraphics graphics, ResourceLine resource, int x, int y, int width) {
+    private int drawNeededLine(GuiGraphics graphics, ResourceLine resource, int x, int y, int width) {
         Component label = Component.literal("Needed: ");
         graphics.drawString(font, truncate(label, width), x, y, LABEL_TEXT, false);
         int valueX = x + font.width(label);
-        graphics.drawString(font, truncate(Component.literal(String.valueOf(resource.missing())), Math.max(0, width - font.width(label))), valueX, y, resource.neededValueColor(), false);
+        Component value = truncate(Component.literal(String.valueOf(resource.missing())), Math.max(0, width - font.width(label)));
+        graphics.drawString(font, value, valueX, y, resource.neededValueColor(), false);
+        return valueX + font.width(value) + 5;
+    }
+
+    private void drawResourceAvailabilityIndicator(GuiGraphics graphics, ResourceLine resource, int x, int y, int lineRight) {
+        if (resource.deliveryOrWarehouseAmount() <= 0 || x + 16 >= lineRight) {
+            return;
+        }
+        int glyphX = Math.min(x, lineRight - 34);
+        int color = resource.deliveryIndicator() ? 0xFF4F8F5A : 0xFF6D84A8;
+        if (resource.deliveryIndicator()) {
+            drawDeliveryGlyph(graphics, glyphX, y + 2, color);
+        } else {
+            drawWarehouseGlyph(graphics, glyphX, y + 2, color);
+        }
+        int amountX = glyphX + 11;
+        int amountWidth = Math.max(0, lineRight - amountX);
+        graphics.drawString(font, truncate(Component.literal(String.valueOf(resource.deliveryOrWarehouseAmount())), amountWidth), amountX, y, SECONDARY_TEXT, false);
+    }
+
+    private void drawDeliveryGlyph(GuiGraphics graphics, int x, int y, int color) {
+        graphics.fill(x, y + 3, x + 7, y + 5, color);
+        graphics.fill(x + 5, y + 1, x + 7, y + 7, color);
+        graphics.fill(x + 7, y + 2, x + 9, y + 6, color);
+    }
+
+    private void drawWarehouseGlyph(GuiGraphics graphics, int x, int y, int color) {
+        graphics.fill(x + 1, y + 3, x + 8, y + 8, color);
+        graphics.fill(x + 2, y + 2, x + 7, y + 3, color);
+        graphics.fill(x + 3, y + 1, x + 6, y + 2, color);
     }
 
     private ResourceScrollContent buildClientResourceScrollRows(ItemStack selectedClientScroll) {
@@ -1157,8 +1185,7 @@ public class SmartClipboardScreen extends Screen {
 
         for (ResourceLine resource : content.resources()) {
             if (mouseX >= x && mouseX < x + 16 && mouseY >= y && mouseY < y + 16) {
-                ItemStack stack = resource.stack();
-                renderSmartInfoOrItemTooltip(graphics, stack, mouseX, mouseY);
+                renderSmartInfoOrItemTooltip(graphics, resource, mouseX, mouseY);
                 return true;
             }
             y += RESOURCE_ROW_HEIGHT;
@@ -1196,7 +1223,7 @@ public class SmartClipboardScreen extends Screen {
                             int indent = Math.min(36, (visibleDepth - 1) * TREE_INDENT);
                             int iconX = x + 4 + indent + 9;
                             if (mouseX >= iconX && mouseX < iconX + 16 && mouseY >= detailY && mouseY < detailY + 16) {
-                                renderSmartInfoOrItemTooltip(graphics, stack, mouseX, mouseY);
+                                renderSmartInfoOrItemTooltip(graphics, stack, entry, mouseX, mouseY);
                                 return true;
                             }
                         }
@@ -1218,18 +1245,117 @@ public class SmartClipboardScreen extends Screen {
         }
     }
 
-    private SmartClipboardReport.Entry smartInfoEntryForStack(ItemStack stack) {
-        for (SmartClipboardReport.Entry entry : report.entries()) {
-            if (isArchitectsCutterEntry(entry) && ItemStack.isSameItemSameComponents(entry.requestedStack(), stack)) {
-                return entry;
-            }
+    private void renderSmartInfoOrItemTooltip(GuiGraphics graphics, ResourceLine resource, int mouseX, int mouseY) {
+        SmartClipboardReport.Entry smartInfoEntry = smartInfoEntryForResource(resource);
+        if (smartInfoEntry != null) {
+            graphics.renderComponentTooltip(font, buildApprovedSmartInfoTooltip(smartInfoEntry, resource.stack()), mouseX, mouseY, resource.stack());
+        } else {
+            graphics.renderTooltip(font, resource.stack(), mouseX, mouseY);
         }
-        for (SmartClipboardReport.Entry entry : report.entries()) {
-            if (isArchitectsCutterEntry(entry) && entry.requestedStack().is(stack.getItem())) {
+    }
+
+    private void renderSmartInfoOrItemTooltip(GuiGraphics graphics, ItemStack stack, SmartClipboardReport.Entry parentEntry, int mouseX, int mouseY) {
+        SmartClipboardReport.Entry smartInfoEntry = smartInfoEntryForStack(stack, parentEntry);
+        if (smartInfoEntry != null) {
+            graphics.renderComponentTooltip(font, buildApprovedSmartInfoTooltip(smartInfoEntry, stack), mouseX, mouseY, stack);
+        } else {
+            graphics.renderTooltip(font, stack, mouseX, mouseY);
+        }
+    }
+
+    private SmartClipboardReport.Entry smartInfoEntryForStack(ItemStack stack) {
+        SmartClipboardReport.Entry exact = smartInfoEntryForKeys(stackLookupKeys(stack));
+        return exact != null ? exact : uniqueSmartInfoEntryForItem(stack);
+    }
+
+    private SmartClipboardReport.Entry smartInfoEntryForResource(ResourceLine resource) {
+        List<String> keys = new ArrayList<>(stackLookupKeys(resource.stack()));
+        keys.add(resource.resourceKey());
+        SmartClipboardReport.Entry exact = smartInfoEntryForKeys(keys);
+        return exact != null ? exact : uniqueSmartInfoEntryForItem(resource.stack());
+    }
+
+    private SmartClipboardReport.Entry smartInfoEntryForStack(ItemStack stack, SmartClipboardReport.Entry parentEntry) {
+        SmartClipboardReport.Entry exact = smartInfoEntryForKeys(stackLookupKeys(stack));
+        if (exact != null) {
+            return exact;
+        }
+        if (isArchitectsCutterEntry(parentEntry)) {
+            return parentEntry;
+        }
+        return uniqueSmartInfoEntryForItem(stack);
+    }
+
+    private List<String> stackLookupKeys(ItemStack stack) {
+        if (stack.isEmpty()) {
+            return List.of();
+        }
+        List<String> keys = new ArrayList<>();
+        if (DomumOrnamentumRequestInspector.isDomumOrnamentumStack(stack)) {
+            keys.add(SmartClipboardReport.domumFingerprintKey(stack));
+        }
+        keys.add(SmartClipboardReport.exactStackKey(stack));
+        keys.add(SmartClipboardReport.resourceStackKey(stack));
+        return keys;
+    }
+
+    private SmartClipboardReport.Entry smartInfoEntryForKeys(List<String> keys) {
+        for (String key : keys) {
+            SmartClipboardReport.Entry entry = smartInfoEntryForKey(key);
+            if (entry != null) {
                 return entry;
             }
         }
         return null;
+    }
+
+    private SmartClipboardReport.Entry smartInfoEntryForKey(String key) {
+        if (key == null || key.isBlank()) {
+            return null;
+        }
+        int bestEntry = -1;
+        int bestPriority = Integer.MAX_VALUE;
+        boolean ambiguous = false;
+        for (SmartClipboardReport.SmartInfoIndexEntry indexEntry : report.smartInfoIndex()) {
+            if (!key.equals(indexEntry.key()) || indexEntry.entryIndex() < 0 || indexEntry.entryIndex() >= report.entries().size()) {
+                continue;
+            }
+            SmartClipboardReport.Entry entry = report.entries().get(indexEntry.entryIndex());
+            if (!isArchitectsCutterEntry(entry)) {
+                continue;
+            }
+            if (indexEntry.priority() < bestPriority) {
+                bestEntry = indexEntry.entryIndex();
+                bestPriority = indexEntry.priority();
+                ambiguous = false;
+            } else if (indexEntry.priority() == bestPriority && bestEntry != indexEntry.entryIndex()) {
+                ambiguous = true;
+            }
+        }
+        return !ambiguous && bestEntry >= 0 ? report.entries().get(bestEntry) : null;
+    }
+
+    private SmartClipboardReport.Entry uniqueSmartInfoEntryForItem(ItemStack stack) {
+        if (stack.isEmpty()) {
+            return null;
+        }
+        SmartClipboardReport.Entry result = null;
+        for (SmartClipboardReport.SmartInfoIndexEntry indexEntry : report.smartInfoIndex()) {
+            if (!SmartClipboardReport.itemIdKey(stack).equals(indexEntry.key())
+                    || indexEntry.entryIndex() < 0
+                    || indexEntry.entryIndex() >= report.entries().size()) {
+                continue;
+            }
+            SmartClipboardReport.Entry entry = report.entries().get(indexEntry.entryIndex());
+            if (!isArchitectsCutterEntry(entry)) {
+                continue;
+            }
+            if (result != null && result != entry) {
+                return null;
+            }
+            result = entry;
+        }
+        return result;
     }
 
     private String expandableReason(SmartClipboardReport.Entry entry) {
@@ -2004,16 +2130,19 @@ public class SmartClipboardScreen extends Screen {
     private record ResolvedScrollBuilding(IBuildingView building, String source) {
     }
 
-    private record ResourceLine(ItemStack stack, String name, int missing, int available, int required, int deliveryOrWarehouseAmount, int neededValueColor, int suppliedColor) {
+    private record ResourceLine(ItemStack stack, String name, int missing, int available, int required, int deliveryOrWarehouseAmount, boolean deliveryIndicator, String resourceKey, int neededValueColor, int suppliedColor) {
         static ResourceLine from(BuildingBuilderResource resource, Map<String, Integer> warehouseSnapshot) {
             ItemStack stack = resource.getItemStack().copyWithCount(1);
             int available = Math.max(0, resource.getAvailable());
             int required = Math.max(0, resource.getAmount());
             int missing = Math.max(0, required - available);
-            int extra = resource.getAmountInDelivery() > 0
+            boolean delivery = resource.getAmountInDelivery() > 0;
+            String resourceKey = warehouseSnapshotKey(resource);
+            int extra = delivery
                     ? resource.getAmountInDelivery()
-                    : warehouseSnapshot.getOrDefault(warehouseSnapshotKey(resource), 0);
-            return new ResourceLine(stack, resource.getName(), missing, available, required, extra, neededValueColor(missing), suppliedColor(available, required));
+                    : warehouseSnapshot.getOrDefault(resourceKey, 0);
+            return new ResourceLine(stack, resource.getName(), missing, available, required, extra, delivery,
+                    SmartClipboardReport.resourceStackKey(stack), neededValueColor(missing), suppliedColor(available, required));
         }
 
         private static String warehouseSnapshotKey(BuildingBuilderResource resource) {

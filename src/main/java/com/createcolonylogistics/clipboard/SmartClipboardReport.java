@@ -1,13 +1,16 @@
 package com.createcolonylogistics.clipboard;
 
 import net.minecraft.core.BlockPos;
+import net.minecraft.core.registries.BuiltInRegistries;
 import net.minecraft.network.FriendlyByteBuf;
 import net.minecraft.network.RegistryFriendlyByteBuf;
 import net.minecraft.world.item.ItemStack;
 
 import java.util.ArrayList;
+import java.util.LinkedHashSet;
 import java.util.List;
 import java.util.Optional;
+import java.util.Set;
 
 public record SmartClipboardReport(
         String colonyName,
@@ -17,8 +20,23 @@ public record SmartClipboardReport(
         boolean capped,
         boolean importantOnly,
         List<ItemStack> resourceScrolls,
+        List<SmartInfoIndexEntry> smartInfoIndex,
         List<Entry> entries
 ) {
+    public static final int SMART_INFO_PRIORITY_FINGERPRINT = 0;
+    public static final int SMART_INFO_PRIORITY_EXACT = 10;
+    public static final int SMART_INFO_PRIORITY_RESOURCE = 20;
+    public static final int SMART_INFO_PRIORITY_DISPLAY = 30;
+    public static final int SMART_INFO_PRIORITY_TREE_PARENT = 40;
+    public static final int SMART_INFO_PRIORITY_REQUEST_TOKEN = 50;
+    public static final int SMART_INFO_PRIORITY_ALTERNATIVE = 70;
+    public static final int SMART_INFO_PRIORITY_ITEM_ID = 100;
+
+    public SmartClipboardReport(String colonyName, int colonyId, int buildingCount, int activeRequestCount, boolean capped, boolean importantOnly,
+                                List<ItemStack> resourceScrolls, List<Entry> entries) {
+        this(colonyName, colonyId, buildingCount, activeRequestCount, capped, importantOnly, resourceScrolls, buildSmartInfoIndex(entries), entries);
+    }
+
     public static SmartClipboardReport fromAnalysis(RequestAnalysisService.AnalysisResult result) {
         return fromAnalysis(result, List.of(), false);
     }
@@ -29,7 +47,23 @@ public record SmartClipboardReport(
 
     public static SmartClipboardReport fromAnalysis(RequestAnalysisService.AnalysisResult result, List<ItemStack> resourceScrolls, boolean importantOnly) {
         List<Entry> entries = new ArrayList<>();
-        result.groupedEntries().values().forEach(group -> group.forEach(entry -> entries.add(new Entry(
+        result.groupedEntries().values().forEach(group -> group.forEach(entry -> entries.add(fromAnalysisEntry(entry))));
+
+        return new SmartClipboardReport(
+                result.colonyName(),
+                result.colonyId(),
+                result.buildingCount(),
+                result.activeRequestCount(),
+                result.capped(),
+                importantOnly,
+                resourceScrolls.stream().map(ItemStack::copy).toList(),
+                buildSmartInfoIndex(entries),
+                entries
+        );
+    }
+
+    private static Entry fromAnalysisEntry(RequestAnalysisService.RequestReportEntry entry) {
+        return new Entry(
                 entry.requestedStack().copy(),
                 entry.displayStacks().stream().map(ItemStack::copy).toList(),
                 entry.requestedCount(),
@@ -52,18 +86,10 @@ public record SmartClipboardReport(
                 Optional.ofNullable(entry.requestToken()).filter(token -> !token.isBlank()),
                 entry.requestTree().stream()
                         .map(node -> new RequestTreeNode(node.depth(), node.stack().copy(), node.count(), node.quantityDisplay(), node.label()))
+                        .toList(),
+                entry.smartInfoKeys().stream()
+                        .map(key -> new SmartInfoKey(key.key(), key.priority()))
                         .toList()
-        ))));
-
-        return new SmartClipboardReport(
-                result.colonyName(),
-                result.colonyId(),
-                result.buildingCount(),
-                result.activeRequestCount(),
-                result.capped(),
-                importantOnly,
-                resourceScrolls.stream().map(ItemStack::copy).toList(),
-                entries
         );
     }
 
@@ -84,7 +110,12 @@ public record SmartClipboardReport(
         for (int i = 0; i < entryCount; i++) {
             entries.add(Entry.decode(buffer));
         }
-        return new SmartClipboardReport(colonyName, colonyId, buildingCount, activeRequestCount, capped, importantOnly, resourceScrolls, entries);
+        int indexCount = buffer.readVarInt();
+        List<SmartInfoIndexEntry> smartInfoIndex = new ArrayList<>(indexCount);
+        for (int i = 0; i < indexCount; i++) {
+            smartInfoIndex.add(SmartInfoIndexEntry.decode(buffer));
+        }
+        return new SmartClipboardReport(colonyName, colonyId, buildingCount, activeRequestCount, capped, importantOnly, resourceScrolls, smartInfoIndex, entries);
     }
 
     public void encode(RegistryFriendlyByteBuf buffer) {
@@ -102,6 +133,100 @@ public record SmartClipboardReport(
         for (Entry entry : entries) {
             entry.encode(buffer);
         }
+        buffer.writeVarInt(smartInfoIndex.size());
+        for (SmartInfoIndexEntry indexEntry : smartInfoIndex) {
+            indexEntry.encode(buffer);
+        }
+    }
+
+    public static String exactStackKey(ItemStack stack) {
+        return stack.isEmpty() ? "" : "exact:" + itemId(stack) + "|" + stack.getComponentsPatch();
+    }
+
+    public static String resourceStackKey(ItemStack stack) {
+        return stack.isEmpty() ? "" : "resource:" + stack.getDescriptionId() + "-" + stack.getComponentsPatch().hashCode();
+    }
+
+    public static String domumFingerprintKey(ItemStack stack) {
+        return stack.isEmpty() || !DomumOrnamentumRequestInspector.isDomumOrnamentumStack(stack)
+                ? ""
+                : domumFingerprintKey(DomumOrnamentumRequestInspector.exactComboFingerprint(stack));
+    }
+
+    public static String domumFingerprintKey(String fingerprint) {
+        return fingerprint == null || fingerprint.isBlank() ? "" : "fingerprint:" + fingerprint;
+    }
+
+    public static String requestTokenKey(String token) {
+        return token == null || token.isBlank() ? "" : "request:" + token;
+    }
+
+    public static String treeParentStackKey(ItemStack stack) {
+        String exact = exactStackKey(stack);
+        return exact.isBlank() ? "" : "tree:" + exact;
+    }
+
+    public static String alternativeStackKey(ItemStack stack) {
+        String exact = exactStackKey(stack);
+        return exact.isBlank() ? "" : "alternative:" + exact;
+    }
+
+    public static String itemIdKey(ItemStack stack) {
+        return stack.isEmpty() ? "" : "item:" + itemId(stack);
+    }
+
+    private static String itemId(ItemStack stack) {
+        return BuiltInRegistries.ITEM.getKey(stack.getItem()).toString();
+    }
+
+    private static List<SmartInfoIndexEntry> buildSmartInfoIndex(List<Entry> entries) {
+        List<SmartInfoIndexEntry> index = new ArrayList<>();
+        Set<String> seen = new LinkedHashSet<>();
+        for (int i = 0; i < entries.size(); i++) {
+            int entryIndex = i;
+            Entry entry = entries.get(i);
+            if (!isSmartInfoEntry(entry)) {
+                continue;
+            }
+            addIndex(index, seen, entryIndex, domumFingerprintKey(entry.comboFingerprintFull()), SMART_INFO_PRIORITY_FINGERPRINT);
+            addStackIndex(index, seen, entryIndex, entry.requestedStack(), SMART_INFO_PRIORITY_EXACT);
+            for (ItemStack stack : entry.displayStacks()) {
+                addStackIndex(index, seen, entryIndex, stack, SMART_INFO_PRIORITY_DISPLAY);
+            }
+            for (RequestTreeNode node : entry.requestTree()) {
+                addIndex(index, seen, entryIndex, treeParentStackKey(node.stack()), SMART_INFO_PRIORITY_TREE_PARENT);
+            }
+            entry.requestToken().ifPresent(token -> addIndex(index, seen, entryIndex, requestTokenKey(token), SMART_INFO_PRIORITY_REQUEST_TOKEN));
+            for (SmartInfoKey key : entry.smartInfoKeys()) {
+                addIndex(index, seen, entryIndex, key.key(), key.priority());
+            }
+            addIndex(index, seen, entryIndex, itemIdKey(entry.requestedStack()), SMART_INFO_PRIORITY_ITEM_ID);
+        }
+        return List.copyOf(index);
+    }
+
+    private static void addStackIndex(List<SmartInfoIndexEntry> index, Set<String> seen, int entryIndex, ItemStack stack, int priority) {
+        if (stack.isEmpty()) {
+            return;
+        }
+        if (DomumOrnamentumRequestInspector.isDomumOrnamentumStack(stack)) {
+            addIndex(index, seen, entryIndex, domumFingerprintKey(stack), Math.min(priority, SMART_INFO_PRIORITY_FINGERPRINT));
+        }
+        addIndex(index, seen, entryIndex, exactStackKey(stack), priority);
+        addIndex(index, seen, entryIndex, resourceStackKey(stack), Math.max(priority, SMART_INFO_PRIORITY_RESOURCE));
+    }
+
+    private static void addIndex(List<SmartInfoIndexEntry> index, Set<String> seen, int entryIndex, String key, int priority) {
+        if (key == null || key.isBlank() || !seen.add(entryIndex + "|" + priority + "|" + key)) {
+            return;
+        }
+        index.add(new SmartInfoIndexEntry(key, entryIndex, priority));
+    }
+
+    private static boolean isSmartInfoEntry(Entry entry) {
+        return entry.doBlockId().startsWith("domum_ornamentum:")
+                && (entry.cutterRecipeId().isPresent()
+                || DomumOrnamentumRequestInspector.isMaterializedArchitectsCutterOutput(entry.requestedStack()));
     }
 
     private static String shortenFingerprint(String fingerprint) {
@@ -132,7 +257,8 @@ public record SmartClipboardReport(
             List<String> recipeKnownBy,
             List<String> canLearnCombo,
             Optional<String> requestToken,
-            List<RequestTreeNode> requestTree
+            List<RequestTreeNode> requestTree,
+            List<SmartInfoKey> smartInfoKeys
     ) {
         private static Entry decode(RegistryFriendlyByteBuf buffer) {
             ItemStack requestedStack = ItemStack.OPTIONAL_STREAM_CODEC.decode(buffer);
@@ -164,10 +290,15 @@ public record SmartClipboardReport(
             for (int i = 0; i < treeSize; i++) {
                 requestTree.add(RequestTreeNode.decode(buffer));
             }
+            int keyCount = buffer.readVarInt();
+            List<SmartInfoKey> smartInfoKeys = new ArrayList<>(keyCount);
+            for (int i = 0; i < keyCount; i++) {
+                smartInfoKeys.add(SmartInfoKey.decode(buffer));
+            }
             return new Entry(requestedStack, displayStacks, requestedCount, quantityDisplay, requestingBuildingName, requestingBuildingPos, requestingWorkerName,
                     dimensionName, resolverName, important, minimumStockRequest,
                     warehouseStock, doBlockId, cutterRecipeId, comboFingerprintShort, comboFingerprintFull,
-                    exactComboAlreadyTaught, recipeKnownBy, canLearnCombo, requestToken, requestTree);
+                    exactComboAlreadyTaught, recipeKnownBy, canLearnCombo, requestToken, requestTree, smartInfoKeys);
         }
 
         private void encode(RegistryFriendlyByteBuf buffer) {
@@ -198,6 +329,33 @@ public record SmartClipboardReport(
             for (RequestTreeNode node : requestTree) {
                 node.encode(buffer);
             }
+            buffer.writeVarInt(smartInfoKeys.size());
+            for (SmartInfoKey key : smartInfoKeys) {
+                key.encode(buffer);
+            }
+        }
+    }
+
+    public record SmartInfoKey(String key, int priority) {
+        private static SmartInfoKey decode(RegistryFriendlyByteBuf buffer) {
+            return new SmartInfoKey(buffer.readUtf(), buffer.readVarInt());
+        }
+
+        private void encode(RegistryFriendlyByteBuf buffer) {
+            buffer.writeUtf(key);
+            buffer.writeVarInt(priority);
+        }
+    }
+
+    public record SmartInfoIndexEntry(String key, int entryIndex, int priority) {
+        private static SmartInfoIndexEntry decode(RegistryFriendlyByteBuf buffer) {
+            return new SmartInfoIndexEntry(buffer.readUtf(), buffer.readVarInt(), buffer.readVarInt());
+        }
+
+        private void encode(RegistryFriendlyByteBuf buffer) {
+            buffer.writeUtf(key);
+            buffer.writeVarInt(entryIndex);
+            buffer.writeVarInt(priority);
         }
     }
 
