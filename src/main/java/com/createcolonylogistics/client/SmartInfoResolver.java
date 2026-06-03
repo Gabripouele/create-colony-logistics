@@ -18,13 +18,29 @@ final class SmartInfoResolver {
     }
 
     Optional<SmartClipboardReport.Entry> resolveEntry(SmartClipboardReport.Entry entry) {
-        return isSmartInfoEntry(entry) ? Optional.of(entry) : productionFallback(entry.requestedStack(), stackKeys(entry.requestedStack()));
+        if (entry == null) {
+            return Optional.empty();
+        }
+        ItemStack stack = entry.requestedStack();
+        if (DomumOrnamentumRequestInspector.isDomumOrnamentumStack(stack)) {
+            SmartClipboardReport.Entry production = productionFallback(stack, stackKeys(stack)).orElse(null);
+            if (production != null && hasProductionContext(production)) {
+                return Optional.of(production);
+            }
+        }
+        return isSmartInfoEntry(entry) ? Optional.of(entry) : productionFallback(stack, stackKeys(stack));
     }
 
     Optional<SmartClipboardReport.Entry> resolveStack(ItemStack stack) {
         SmartClipboardReport.Entry exact = resolveKeys(stackKeys(stack)).orElse(null);
         if (exact != null) {
             return Optional.of(exact);
+        }
+        if (DomumOrnamentumRequestInspector.isDomumOrnamentumStack(stack)) {
+            SmartClipboardReport.Entry production = productionFallback(stack, stackKeys(stack)).orElse(null);
+            if (production != null) {
+                return Optional.of(production);
+            }
         }
         SmartClipboardReport.Entry item = uniqueItemMatch(stack).orElse(null);
         return item != null ? Optional.of(item) : productionFallback(stack, stackKeys(stack));
@@ -34,6 +50,12 @@ final class SmartInfoResolver {
         SmartClipboardReport.Entry exact = resolveKeys(stackKeys(stack)).orElse(null);
         if (exact != null) {
             return Optional.of(exact);
+        }
+        if (DomumOrnamentumRequestInspector.isDomumOrnamentumStack(stack)) {
+            SmartClipboardReport.Entry production = productionFallback(stack, stackKeys(stack)).orElse(null);
+            if (production != null) {
+                return Optional.of(production);
+            }
         }
         if (isSmartInfoEntry(parentEntry)) {
             return Optional.of(parentEntry);
@@ -46,6 +68,12 @@ final class SmartInfoResolver {
         SmartClipboardReport.Entry exact = resolveKeys(lookup.keys()).orElse(null);
         if (exact != null) {
             return Optional.of(exact);
+        }
+        if (DomumOrnamentumRequestInspector.isDomumOrnamentumStack(lookup.stack())) {
+            SmartClipboardReport.Entry production = productionFallback(lookup.stack(), lookup.keys()).orElse(null);
+            if (production != null) {
+                return Optional.of(production);
+            }
         }
         SmartClipboardReport.Entry semantic = uniqueSemanticDomumMatch(lookup.stack()).orElse(null);
         if (semantic != null) {
@@ -73,7 +101,7 @@ final class SmartInfoResolver {
         if (stack == null || stack.isEmpty()) {
             return Optional.empty();
         }
-        ProductionMatch match = resolveProduction(keys).orElse(null);
+        ProductionMatch match = resolveProduction(stack, keys).orElse(null);
         if (match == null) {
             return Optional.empty();
         }
@@ -91,10 +119,9 @@ final class SmartInfoResolver {
         return Optional.of(fallbackEntry(stack, production, knownBy, canLearn));
     }
 
-    private Optional<ProductionMatch> resolveProduction(List<SmartClipboardReport.SmartInfoKey> keys) {
+    private Optional<ProductionMatch> resolveProduction(ItemStack stack, List<SmartClipboardReport.SmartInfoKey> keys) {
         ProductionMatch best = null;
-        int bestPriority = Integer.MAX_VALUE;
-        boolean ambiguous = false;
+        ProductionRank bestRank = null;
         for (SmartClipboardReport.SmartInfoKey key : keys) {
             if (key.key() == null || key.key().isBlank()) {
                 continue;
@@ -105,26 +132,58 @@ final class SmartInfoResolver {
                         continue;
                     }
                     int priority = Math.max(key.priority(), productionKey.priority());
-                    if (priority < bestPriority) {
-                        best = new ProductionMatch(production, key.key(), priority);
-                        bestPriority = priority;
-                        ambiguous = false;
-                    } else if (priority == bestPriority && (best == null || best.production() != production)) {
-                        ambiguous = true;
+                    ProductionMatch candidate = new ProductionMatch(production, key.key(), priority);
+                    ProductionRank rank = productionRank(candidate, stack);
+                    if (bestRank == null || rank.compareTo(bestRank) < 0) {
+                        best = candidate;
+                        bestRank = rank;
                     }
                 }
             }
         }
-        return !ambiguous && best != null ? Optional.of(best) : Optional.empty();
+        return Optional.ofNullable(best);
     }
 
     private static boolean isExactDomumProductionMatch(ProductionMatch match, ItemStack stack) {
-        if (!ItemStack.isSameItemSameComponents(match.production().stack(), stack)
-                && !DomumOrnamentumRequestInspector.sameMaterializedDomumOutput(match.production().stack(), stack)) {
-            return false;
+        return isConcreteProductionKey(match.key());
+    }
+
+    private static int productionSourceScore(ProductionMatch match) {
+        String key = match.key();
+        if (isConcreteProductionKey(key)) {
+            return 0;
         }
-        return match.priority() <= SmartClipboardReport.SMART_INFO_PRIORITY_OUTPUT
-                && !match.key().startsWith("recipe:");
+        if (key != null && key.startsWith("recipe:")) {
+            return 10;
+        }
+        if (key != null && key.startsWith("item:")) {
+            return 20;
+        }
+        return 30;
+    }
+
+    private static ProductionRank productionRank(ProductionMatch match, ItemStack stack) {
+        boolean domum = DomumOrnamentumRequestInspector.isDomumOrnamentumStack(stack);
+        boolean exactDomum = !domum || isExactDomumProductionMatch(match, stack);
+        boolean context = !match.production().knownBy().isEmpty() || !match.production().canLearn().isEmpty();
+        return new ProductionRank(
+                exactDomum ? productionSourceScore(match) : productionSourceScore(match) + 100,
+                context ? 0 : 1,
+                match.priority()
+        );
+    }
+
+    private static boolean isConcreteProductionKey(String key) {
+        return key != null
+                && (key.startsWith("exact:")
+                || key.startsWith("resource:")
+                || key.startsWith("material:")
+                || key.startsWith("fingerprint:")
+                || key.startsWith("recipe-output:"));
+    }
+
+    private static boolean hasProductionContext(SmartClipboardReport.Entry entry) {
+        return entry != null && (!entry.recipeKnownBy().isEmpty() || !entry.canLearnCombo().isEmpty());
     }
 
     private SmartClipboardReport.Entry fallbackEntry(ItemStack stack, SmartClipboardReport.ProductionInfo production,
@@ -278,5 +337,20 @@ final class SmartInfoResolver {
     }
 
     private record ProductionMatch(SmartClipboardReport.ProductionInfo production, String key, int priority) {
+    }
+
+    private record ProductionRank(int sourceScore, int contextPenalty, int priority) implements Comparable<ProductionRank> {
+        @Override
+        public int compareTo(ProductionRank other) {
+            int source = Integer.compare(sourceScore, other.sourceScore);
+            if (source != 0) {
+                return source;
+            }
+            int context = Integer.compare(contextPenalty, other.contextPenalty);
+            if (context != 0) {
+                return context;
+            }
+            return Integer.compare(priority, other.priority);
+        }
     }
 }

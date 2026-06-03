@@ -14,6 +14,11 @@ public final class CCLNetworking {
                 ClientboundSmartClipboardReportPacket.STREAM_CODEC,
                 ClientboundSmartClipboardReportPacket::handle
         );
+        registrar.playToClient(
+                ClientboundSmartColonyMapOpenPacket.TYPE,
+                ClientboundSmartColonyMapOpenPacket.STREAM_CODEC,
+                ClientboundSmartColonyMapOpenPacket::handle
+        );
         // DIAGNOSTIC ONLY - remove after Cutter recipe source-truth audit
         registrar.playToServer(
                 ServerboundSmartInfoRecipeDiagnosticPacket.TYPE,
@@ -24,6 +29,11 @@ public final class CCLNetworking {
                 ServerboundSmartClipboardScrollPacket.TYPE,
                 ServerboundSmartClipboardScrollPacket.STREAM_CODEC,
                 ServerboundSmartClipboardScrollPacket::handle
+        );
+        registrar.playToServer(
+                ServerboundSmartClipboardColonyMapPacket.TYPE,
+                ServerboundSmartClipboardColonyMapPacket.STREAM_CODEC,
+                ServerboundSmartClipboardColonyMapPacket::handle
         );
         registrar.playToServer(
                 ServerboundSmartClipboardFilterPacket.TYPE,

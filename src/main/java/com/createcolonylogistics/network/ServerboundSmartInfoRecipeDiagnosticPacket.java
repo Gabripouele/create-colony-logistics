@@ -23,6 +23,7 @@ import java.util.Optional;
 // DIAGNOSTIC ONLY - remove after Cutter recipe source-truth audit
 public record ServerboundSmartInfoRecipeDiagnosticPacket(
         ItemStack stack,
+        SmartClipboardReport report,
         String context,
         String hoverPath,
         int directEntryIndex,
@@ -40,6 +41,7 @@ public record ServerboundSmartInfoRecipeDiagnosticPacket(
     private static ServerboundSmartInfoRecipeDiagnosticPacket decode(RegistryFriendlyByteBuf buffer) {
         return new ServerboundSmartInfoRecipeDiagnosticPacket(
                 ItemStack.OPTIONAL_STREAM_CODEC.decode(buffer),
+                buffer.readBoolean() ? SmartClipboardReport.decode(buffer) : null,
                 buffer.readUtf(),
                 buffer.readUtf(),
                 buffer.readVarInt(),
@@ -54,6 +56,12 @@ public record ServerboundSmartInfoRecipeDiagnosticPacket(
 
     private void encode(RegistryFriendlyByteBuf buffer) {
         ItemStack.OPTIONAL_STREAM_CODEC.encode(buffer, stack == null ? ItemStack.EMPTY : stack);
+        if (report == null) {
+            buffer.writeBoolean(false);
+        } else {
+            buffer.writeBoolean(true);
+            report.encode(buffer);
+        }
         buffer.writeUtf(context == null ? "" : context);
         buffer.writeUtf(hoverPath == null ? "" : hoverPath);
         buffer.writeVarInt(directEntryIndex);
@@ -89,6 +97,7 @@ public record ServerboundSmartInfoRecipeDiagnosticPacket(
                     sourcePath = SmartInfoTooltipSourceDiagnosticDumper.dump(
                             player,
                             colony.get(),
+                            packet.report() == null ? SmartInfoTooltipSourceDiagnosticDumper.emptyReport() : packet.report(),
                             packet.stack(),
                             packet.hoverPath(),
                             packet.context(),

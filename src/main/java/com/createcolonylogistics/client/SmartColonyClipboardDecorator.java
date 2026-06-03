@@ -8,7 +8,6 @@ import com.minecolonies.api.colony.requestsystem.resolver.player.IPlayerRequestR
 import com.minecolonies.api.colony.requestsystem.resolver.retrying.IRetryingRequestResolver;
 import com.minecolonies.api.colony.requestsystem.token.IToken;
 import com.minecolonies.api.items.component.ColonyId;
-import net.minecraft.client.Minecraft;
 import net.minecraft.client.gui.Font;
 import net.minecraft.client.gui.GuiGraphics;
 import net.minecraft.network.chat.Component;
@@ -19,16 +18,8 @@ import java.util.HashSet;
 import java.util.Set;
 
 public class SmartColonyClipboardDecorator implements IItemDecorator {
-    private static final int COUNT_RGB = 0xFF4500;
-    private static final int COUNT_X_OFFSET = 15;
-    private static final int COUNT_Y_OFFSET = -2;
-    private static final int MIN_ALPHA = 0x59;
-    private static final int MAX_ALPHA = 0xFF;
-    private static final int ALPHA_RANGE = MAX_ALPHA - MIN_ALPHA;
-    private static final int PULSE_CYCLE_TICKS = 60;
-    private static final int PULSE_HOLD_TICKS = 20;
-    private static final int PULSE_FADE_OUT_TICKS = 20;
-    private static final int PULSE_FADE_IN_TICKS = 20;
+    static final int COUNT_X_OFFSET = 15;
+    static final int COUNT_Y_OFFSET = -2;
 
     @Override
     public boolean render(GuiGraphics graphics, Font font, ItemStack stack, int x, int y) {
@@ -41,7 +32,7 @@ public class SmartColonyClipboardDecorator implements IItemDecorator {
         return true;
     }
 
-    private static int pendingRequestCount(ItemStack stack) {
+    static int pendingRequestCount(ItemStack stack) {
         IColonyView colonyView = ColonyId.readColonyViewFromItemStack(stack);
         if (colonyView == null) {
             return 0;
@@ -90,24 +81,7 @@ public class SmartColonyClipboardDecorator implements IItemDecorator {
 
         graphics.pose().pushPose();
         graphics.pose().translate(0.0F, 0.0F, 500.0F);
-        graphics.drawCenteredString(font, Component.literal(text), centerX, drawY, pulsingCountColor());
+        graphics.drawCenteredString(font, Component.literal(text), centerX, drawY, SmartClipboardPulse.pulsingCountColor());
         graphics.pose().popPose();
-    }
-
-    private static int pulsingCountColor() {
-        Minecraft minecraft = Minecraft.getInstance();
-        long tick = minecraft.level == null ? System.currentTimeMillis() / 50L : minecraft.level.getGameTime();
-        long cycleTick = tick % PULSE_CYCLE_TICKS;
-        int alpha;
-        if (cycleTick < PULSE_HOLD_TICKS) {
-            alpha = MAX_ALPHA;
-        } else if (cycleTick < PULSE_HOLD_TICKS + PULSE_FADE_OUT_TICKS) {
-            double progress = (cycleTick - PULSE_HOLD_TICKS) / (double) (PULSE_FADE_OUT_TICKS - 1);
-            alpha = MAX_ALPHA - (int) Math.round(progress * ALPHA_RANGE);
-        } else {
-            double progress = (cycleTick - PULSE_HOLD_TICKS - PULSE_FADE_OUT_TICKS) / (double) (PULSE_FADE_IN_TICKS - 1);
-            alpha = MIN_ALPHA + (int) Math.round(progress * ALPHA_RANGE);
-        }
-        return (alpha << 24) | COUNT_RGB;
     }
 }

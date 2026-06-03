@@ -20,6 +20,7 @@ public record SmartClipboardReport(
         boolean capped,
         boolean importantOnly,
         List<ItemStack> resourceScrolls,
+        ItemStack colonyMap,
         List<ProductionInfo> productionIndex,
         List<SmartInfoIndexEntry> smartInfoIndex,
         List<Entry> entries
@@ -39,7 +40,12 @@ public record SmartClipboardReport(
 
     public SmartClipboardReport(String colonyName, int colonyId, int buildingCount, int activeRequestCount, boolean capped, boolean importantOnly,
                                 List<ItemStack> resourceScrolls, List<Entry> entries) {
-        this(colonyName, colonyId, buildingCount, activeRequestCount, capped, importantOnly, resourceScrolls, List.of(), buildSmartInfoIndex(entries), entries);
+        this(colonyName, colonyId, buildingCount, activeRequestCount, capped, importantOnly, resourceScrolls, ItemStack.EMPTY, entries);
+    }
+
+    public SmartClipboardReport(String colonyName, int colonyId, int buildingCount, int activeRequestCount, boolean capped, boolean importantOnly,
+                                List<ItemStack> resourceScrolls, ItemStack colonyMap, List<Entry> entries) {
+        this(colonyName, colonyId, buildingCount, activeRequestCount, capped, importantOnly, resourceScrolls, colonyMap, List.of(), buildSmartInfoIndex(entries), entries);
     }
 
     public static SmartClipboardReport fromAnalysis(RequestAnalysisService.AnalysisResult result) {
@@ -51,6 +57,10 @@ public record SmartClipboardReport(
     }
 
     public static SmartClipboardReport fromAnalysis(RequestAnalysisService.AnalysisResult result, List<ItemStack> resourceScrolls, boolean importantOnly) {
+        return fromAnalysis(result, resourceScrolls, ItemStack.EMPTY, importantOnly);
+    }
+
+    public static SmartClipboardReport fromAnalysis(RequestAnalysisService.AnalysisResult result, List<ItemStack> resourceScrolls, ItemStack colonyMap, boolean importantOnly) {
         List<Entry> entries = new ArrayList<>();
         result.groupedEntries().values().forEach(group -> group.forEach(entry -> entries.add(fromAnalysisEntry(entry))));
 
@@ -62,6 +72,7 @@ public record SmartClipboardReport(
                 result.capped(),
                 importantOnly,
                 resourceScrolls.stream().map(ItemStack::copy).toList(),
+                colonyMap.copy(),
                 result.productionIndex().stream()
                         .map(SmartClipboardReport::fromProductionInfo)
                         .toList(),
@@ -140,6 +151,7 @@ public record SmartClipboardReport(
         for (int i = 0; i < scrollCount; i++) {
             resourceScrolls.add(ItemStack.OPTIONAL_STREAM_CODEC.decode(buffer));
         }
+        ItemStack colonyMap = ItemStack.OPTIONAL_STREAM_CODEC.decode(buffer);
         int productionCount = buffer.readVarInt();
         List<ProductionInfo> productionIndex = new ArrayList<>(productionCount);
         for (int i = 0; i < productionCount; i++) {
@@ -155,7 +167,7 @@ public record SmartClipboardReport(
         for (int i = 0; i < indexCount; i++) {
             smartInfoIndex.add(SmartInfoIndexEntry.decode(buffer));
         }
-        return new SmartClipboardReport(colonyName, colonyId, buildingCount, activeRequestCount, capped, importantOnly, resourceScrolls, productionIndex, smartInfoIndex, entries);
+        return new SmartClipboardReport(colonyName, colonyId, buildingCount, activeRequestCount, capped, importantOnly, resourceScrolls, colonyMap, productionIndex, smartInfoIndex, entries);
     }
 
     public void encode(RegistryFriendlyByteBuf buffer) {
@@ -169,6 +181,7 @@ public record SmartClipboardReport(
         for (ItemStack scroll : resourceScrolls) {
             ItemStack.OPTIONAL_STREAM_CODEC.encode(buffer, scroll);
         }
+        ItemStack.OPTIONAL_STREAM_CODEC.encode(buffer, colonyMap);
         buffer.writeVarInt(productionIndex.size());
         for (ProductionInfo productionInfo : productionIndex) {
             productionInfo.encode(buffer);

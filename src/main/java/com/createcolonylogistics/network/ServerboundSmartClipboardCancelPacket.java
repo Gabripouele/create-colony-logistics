@@ -3,6 +3,7 @@ package com.createcolonylogistics.network;
 import com.createcolonylogistics.CreateColonyLogistics;
 import com.createcolonylogistics.clipboard.ColonyContextResolver;
 import com.createcolonylogistics.clipboard.RequestAnalysisService;
+import com.createcolonylogistics.clipboard.SmartClipboardColonyMapStorage;
 import com.createcolonylogistics.clipboard.SmartClipboardFilterState;
 import com.createcolonylogistics.clipboard.SmartClipboardReport;
 import com.createcolonylogistics.clipboard.SmartClipboardScrollStorage;
@@ -86,9 +87,10 @@ public record ServerboundSmartClipboardCancelPacket(String requestToken) impleme
         if (colony.isPresent()) {
             java.util.List<ItemStack> resourceScrolls = SmartClipboardScrollStorage.read(clipboard);
             RequestAnalysisService.AnalysisResult analysis = RequestAnalysisService.analyze(player.serverLevel(), colony.get(), MAX_REPORT_REQUESTS, resourceScrolls);
-            report = SmartClipboardReport.fromAnalysis(analysis, resourceScrolls, importantOnly);
+            report = SmartClipboardReport.fromAnalysis(analysis, resourceScrolls, SmartClipboardColonyMapStorage.read(clipboard), importantOnly);
         } else {
-            report = new SmartClipboardReport("", 0, 0, 0, false, importantOnly, SmartClipboardScrollStorage.read(clipboard), java.util.List.of());
+            report = new SmartClipboardReport("", 0, 0, 0, false, importantOnly, SmartClipboardScrollStorage.read(clipboard),
+                    SmartClipboardColonyMapStorage.read(clipboard), java.util.List.of());
         }
         PacketDistributor.sendToPlayer(player, new ClientboundSmartClipboardReportPacket(report, confirmedCancelledRequestToken, cancelAccepted));
     }

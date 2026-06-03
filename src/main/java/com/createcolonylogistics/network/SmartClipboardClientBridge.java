@@ -1,6 +1,7 @@
 package com.createcolonylogistics.network;
 
 import com.createcolonylogistics.clipboard.SmartClipboardReport;
+import net.minecraft.world.item.ItemStack;
 
 import java.lang.reflect.Method;
 
@@ -23,6 +24,16 @@ public final class SmartClipboardClientBridge {
             Class<?> client = Class.forName("com.createcolonylogistics.client.SmartClipboardClient");
             Method method = client.getMethod("applyCancelResult", SmartClipboardReport.class, String.class, boolean.class);
             method.invoke(null, report, requestToken, accepted);
+        } catch (ReflectiveOperationException | RuntimeException ignored) {
+            // Client-only bridge; no-op if invoked in an unexpected environment.
+        }
+    }
+
+    public static void openColonyMap(ItemStack colonyMap) {
+        try {
+            Class<?> client = Class.forName("com.createcolonylogistics.client.SmartClipboardClient");
+            Method method = client.getMethod("openColonyMap", ItemStack.class);
+            method.invoke(null, colonyMap);
         } catch (ReflectiveOperationException | RuntimeException ignored) {
             // Client-only bridge; no-op if invoked in an unexpected environment.
         }

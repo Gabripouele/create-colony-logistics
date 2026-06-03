@@ -42,7 +42,7 @@ import java.util.stream.Collectors;
 
 // DIAGNOSTIC ONLY - remove after Cutter recipe source-truth audit
 public final class SmartInfoRecipeDiagnosticDumper {
-    public static final boolean ENABLE_SMART_INFO_RECIPE_DIAGNOSTICS = true;
+    public static final boolean ENABLE_SMART_INFO_RECIPE_DIAGNOSTICS = false;
     private static final Path OUTPUT_DIR = Path.of("run", "smart-info-recipe-diagnostics");
     private static final DateTimeFormatter FILE_TIME = DateTimeFormatter.ofPattern("yyyyMMdd-HHmmss");
 

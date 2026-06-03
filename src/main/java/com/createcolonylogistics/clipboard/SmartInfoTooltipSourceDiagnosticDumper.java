@@ -22,12 +22,16 @@ import java.util.stream.Collectors;
 
 // DIAGNOSTIC ONLY - remove after tooltip source-selection audit
 public final class SmartInfoTooltipSourceDiagnosticDumper {
-    public static final boolean ENABLE_SMART_INFO_TOOLTIP_SOURCE_DIAGNOSTICS = true;
+    public static final boolean ENABLE_SMART_INFO_TOOLTIP_SOURCE_DIAGNOSTICS = false;
 
     private static final Path OUTPUT_DIR = Path.of("run", "smart-info-tooltip-source-diagnostics");
     private static final DateTimeFormatter FILE_TIME = DateTimeFormatter.ofPattern("yyyyMMdd-HHmmss");
 
     private SmartInfoTooltipSourceDiagnosticDumper() {
+    }
+
+    public static SmartClipboardReport emptyReport() {
+        return new SmartClipboardReport("", 0, 0, 0, false, false, List.of(), ItemStack.EMPTY, List.of());
     }
 
     public static Optional<Path> dump(
@@ -124,6 +128,7 @@ public final class SmartInfoTooltipSourceDiagnosticDumper {
             out.append("- priority: ").append(candidate.priority()).append('\n');
             out.append("- decision: ").append(candidate.decision()).append('\n');
             out.append("- note: ").append(candidate.note()).append('\n');
+            out.append("- ").append(candidate.decision()).append(" because: ").append(candidate.note()).append('\n');
             candidate.entry().ifPresent(entry -> appendEntryFields(out, entry));
             candidate.production().ifPresent(production -> appendProductionFields(out, production, stack, candidate.key(), candidate.priority()));
             out.append('\n');
@@ -176,6 +181,12 @@ public final class SmartInfoTooltipSourceDiagnosticDumper {
         Optional<Candidate> selected = Optional.empty();
 
         if ("main-row".equals(hoverPath)) {
+            Optional<Candidate> production = DomumOrnamentumRequestInspector.isDomumOrnamentumStack(stack)
+                    ? productionFallbackCandidate(report, stack, keys, candidates)
+                    : Optional.empty();
+            if (production.isPresent() && production.get().entry().map(SmartInfoTooltipSourceDiagnosticDumper::hasProductionContext).orElse(false)) {
+                return new ResolverTrace(candidates, production);
+            }
             Optional<SmartClipboardReport.Entry> direct = entryAt(report, directEntryIndex);
             if (direct.isPresent()) {
                 boolean accepted = SmartClipboardReport.isSmartInfoEntry(direct.get());
@@ -188,12 +199,19 @@ public final class SmartInfoTooltipSourceDiagnosticDumper {
             } else {
                 candidates.add(Candidate.note("direct row entry", "none", Integer.MAX_VALUE, "rejected", "no direct row index supplied"));
             }
-            return productionFallbackTrace(report, stack, keys, candidates);
+            return production.isPresent() ? new ResolverTrace(candidates, production) : productionFallbackTrace(report, stack, keys, candidates);
         }
 
         Optional<Candidate> exact = indexedTrace(report, keys, candidates);
         if (exact.isPresent()) {
             return new ResolverTrace(candidates, exact);
+        }
+
+        if (DomumOrnamentumRequestInspector.isDomumOrnamentumStack(stack)) {
+            Optional<Candidate> production = productionFallbackCandidate(report, stack, keys, candidates);
+            if (production.isPresent()) {
+                return new ResolverTrace(candidates, production);
+            }
         }
 
         if ("request-tree".equals(hoverPath)) {
@@ -231,7 +249,7 @@ public final class SmartInfoTooltipSourceDiagnosticDumper {
             List<SmartClipboardReport.SmartInfoKey> keys,
             List<Candidate> candidates
     ) {
-        ProductionResolveResult production = resolveProduction(report, keys);
+        ProductionResolveResult production = resolveProduction(report, stack, keys);
         if (production.selected().isEmpty()) {
             candidates.add(Candidate.note("production fallback", production.matchedKey(), production.priority(), "rejected", production.reason()));
             return new ResolverTrace(candidates, Optional.empty());
@@ -257,6 +275,16 @@ public final class SmartInfoTooltipSourceDiagnosticDumper {
                 exactDomumProduction ? "exact production fallback selected" : "shape-only or non-DO production fallback selected", fallback);
         candidates.add(candidate);
         return new ResolverTrace(candidates, Optional.of(candidate));
+    }
+
+    private static Optional<Candidate> productionFallbackCandidate(
+            SmartClipboardReport report,
+            ItemStack stack,
+            List<SmartClipboardReport.SmartInfoKey> keys,
+            List<Candidate> candidates
+    ) {
+        ResolverTrace trace = productionFallbackTrace(report, stack, keys, candidates);
+        return trace.selected();
     }
 
     private static Optional<Candidate> indexedTrace(
@@ -377,10 +405,9 @@ public final class SmartInfoTooltipSourceDiagnosticDumper {
         return Optional.of(selected);
     }
 
-    private static ProductionResolveResult resolveProduction(SmartClipboardReport report, List<SmartClipboardReport.SmartInfoKey> keys) {
+    private static ProductionResolveResult resolveProduction(SmartClipboardReport report, ItemStack stack, List<SmartClipboardReport.SmartInfoKey> keys) {
         ProductionCandidate best = null;
-        int bestPriority = Integer.MAX_VALUE;
-        boolean ambiguous = false;
+        ProductionRank bestRank = null;
         for (SmartClipboardReport.SmartInfoKey key : keys) {
             if (key.key() == null || key.key().isBlank()) {
                 continue;
@@ -392,18 +419,13 @@ public final class SmartInfoTooltipSourceDiagnosticDumper {
                     }
                     int priority = Math.max(key.priority(), productionKey.priority());
                     ProductionCandidate candidate = new ProductionCandidate(production, key.key(), priority, "matched production key");
-                    if (priority < bestPriority) {
+                    ProductionRank rank = productionRank(candidate, stack);
+                    if (bestRank == null || rank.compareTo(bestRank) < 0) {
                         best = candidate;
-                        bestPriority = priority;
-                        ambiguous = false;
-                    } else if (priority == bestPriority && (best == null || best.production() != production)) {
-                        ambiguous = true;
+                        bestRank = rank;
                     }
                 }
             }
-        }
-        if (ambiguous) {
-            return new ProductionResolveResult(Optional.empty(), "", bestPriority, "ambiguous equal-priority production matches");
         }
         if (best == null) {
             return new ProductionResolveResult(Optional.empty(), "", Integer.MAX_VALUE, "no matching production fallback entry");
@@ -506,12 +528,40 @@ public final class SmartInfoTooltipSourceDiagnosticDumper {
     }
 
     private static boolean isExactDomumProductionMatch(ProductionCandidate match, ItemStack stack) {
-        if (!ItemStack.isSameItemSameComponents(match.production().stack(), stack)
-                && !DomumOrnamentumRequestInspector.sameMaterializedDomumOutput(match.production().stack(), stack)) {
-            return false;
+        return isConcreteProductionKey(match.matchedKey());
+    }
+
+    private static ProductionRank productionRank(ProductionCandidate candidate, ItemStack stack) {
+        boolean domum = DomumOrnamentumRequestInspector.isDomumOrnamentumStack(stack);
+        boolean exactDomum = !domum || isExactDomumProductionMatch(candidate, stack);
+        boolean context = !candidate.production().knownBy().isEmpty() || !candidate.production().canLearn().isEmpty();
+        return new ProductionRank(
+                exactDomum ? productionSourceScore(candidate.matchedKey()) : productionSourceScore(candidate.matchedKey()) + 100,
+                context ? 0 : 1,
+                candidate.priority()
+        );
+    }
+
+    private static int productionSourceScore(String key) {
+        if (isConcreteProductionKey(key)) {
+            return 0;
         }
-        return match.priority() <= SmartClipboardReport.SMART_INFO_PRIORITY_OUTPUT
-                && !match.matchedKey().startsWith("recipe:");
+        if (key != null && key.startsWith("recipe:")) {
+            return 10;
+        }
+        if (key != null && key.startsWith("item:")) {
+            return 20;
+        }
+        return 30;
+    }
+
+    private static boolean isConcreteProductionKey(String key) {
+        return key != null
+                && (key.startsWith("exact:")
+                || key.startsWith("resource:")
+                || key.startsWith("material:")
+                || key.startsWith("fingerprint:")
+                || key.startsWith("recipe-output:"));
     }
 
     private static boolean entryMatchesStack(SmartClipboardReport.Entry entry, ItemStack stack) {
@@ -628,6 +678,10 @@ public final class SmartInfoTooltipSourceDiagnosticDumper {
         return isArchitectsCutterEntry(entry) || !teachingFeedbackBuildings(entry).isEmpty();
     }
 
+    private static boolean hasProductionContext(SmartClipboardReport.Entry entry) {
+        return entry != null && (!entry.recipeKnownBy().isEmpty() || !entry.canLearnCombo().isEmpty());
+    }
+
     private static boolean isArchitectsCutterEntry(SmartClipboardReport.Entry entry) {
         return entry.doBlockId().startsWith("domum_ornamentum:")
                 && (entry.cutterRecipeId().isPresent()
@@ -721,6 +775,21 @@ public final class SmartInfoTooltipSourceDiagnosticDumper {
     }
 
     private record ProductionCandidate(SmartClipboardReport.ProductionInfo production, String matchedKey, int priority, String note) {
+    }
+
+    private record ProductionRank(int sourceScore, int contextPenalty, int priority) implements Comparable<ProductionRank> {
+        @Override
+        public int compareTo(ProductionRank other) {
+            int source = Integer.compare(sourceScore, other.sourceScore);
+            if (source != 0) {
+                return source;
+            }
+            int context = Integer.compare(contextPenalty, other.contextPenalty);
+            if (context != 0) {
+                return context;
+            }
+            return Integer.compare(priority, other.priority);
+        }
     }
 
     private record Candidate(

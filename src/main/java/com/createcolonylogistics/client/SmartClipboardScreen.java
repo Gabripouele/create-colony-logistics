@@ -3,16 +3,20 @@ package com.createcolonylogistics.client;
 import com.mojang.blaze3d.systems.RenderSystem;
 import com.createcolonylogistics.CreateColonyLogistics;
 import com.createcolonylogistics.clipboard.DomumOrnamentumRequestInspector;
+import com.createcolonylogistics.clipboard.SmartClipboardColonyMapStorage;
 import com.createcolonylogistics.clipboard.SmartClipboardReport;
 import com.createcolonylogistics.clipboard.SmartClipboardScrollStorage;
 import com.createcolonylogistics.clipboard.SmartClipboardScrollStorage.ScrollLinkSnapshot;
+import com.createcolonylogistics.network.ServerboundSmartClipboardColonyMapPacket;
 import com.createcolonylogistics.network.ServerboundSmartClipboardDebugPacket;
 import com.createcolonylogistics.network.ServerboundSmartClipboardCancelPacket;
 import com.createcolonylogistics.network.ServerboundSmartClipboardFilterPacket;
 import com.createcolonylogistics.network.ServerboundSmartClipboardScrollPacket;
 import com.createcolonylogistics.network.ServerboundSmartInfoRecipeDiagnosticPacket;
 import com.createcolonylogistics.network.ServerboundSmartScrollDebugPacket;
+import com.createcolonylogistics.registry.CCLItems;
 import com.minecolonies.api.colony.IColonyView;
+import com.minecolonies.api.colony.ICitizenDataView;
 import com.minecolonies.api.colony.buildings.views.IBuildingView;
 import com.minecolonies.api.colony.requestsystem.request.IRequest;
 import com.minecolonies.api.colony.requestsystem.request.RequestState;
@@ -65,6 +69,7 @@ public class SmartClipboardScreen extends Screen {
     private static final ResourceLocation STOCK_KEEPER_TEXTURE = ResourceLocation.fromNamespaceAndPath(CreateColonyLogistics.MOD_ID, "textures/gui/smart_clipboard_gui.png");
     private static final ResourceLocation IMPORTANT_TOGGLE_GREEN = ResourceLocation.fromNamespaceAndPath(CreateColonyLogistics.MOD_ID, "textures/gui/eletron_overlay.png");
     private static final ResourceLocation RESOURCE_SCROLL_ID = ResourceLocation.fromNamespaceAndPath("minecolonies", "resourcescroll");
+    private static final ResourceLocation COLONY_MAP_ID = ResourceLocation.fromNamespaceAndPath("minecolonies", "colonymap");
     private static final ResourceLocation MINECOLONIES_CLIPBOARD_ID = ResourceLocation.fromNamespaceAndPath("minecolonies", "clipboard");
     private static final int TEXTURE_WIDTH = 256;
     private static final int TEXTURE_HEIGHT = 256;
@@ -80,11 +85,14 @@ public class SmartClipboardScreen extends Screen {
     private static final int TAB_WIDTH = 20;
     private static final int TAB_HEIGHT = 20;
     private static final int TAB_ICON_PADDING = 2;
+    private static final int TAB_GAP = 6;
     private static final int TITLE_Y = 9;
     private static final int TAB_Y = TITLE_Y + 20;
     private static final int COLONY_LINE_Y = TAB_Y + TAB_HEIGHT + 4;
     private static final int SUMMARY_LINE_Y = COLONY_LINE_Y + 12;
     private static final int CONTENT_LIST_TOP = SUMMARY_LINE_Y + 19;
+    private static final int COLONY_MAP_CONTENT_TOP = COLONY_LINE_Y + 1;
+    private static final int COLONY_MAP_NAME_TOP_GAP = 3;
     private static final int SCROLL_DETAILS_TOP = COLONY_LINE_Y + 16;
     private static final int CONTENT_LIST_BOTTOM = 294;
     private static final int SCROLL_STORAGE_GRID_TOP = 269;
@@ -124,6 +132,8 @@ public class SmartClipboardScreen extends Screen {
     private static final int RESOURCE_SCROLL_SOFT_RED = 0xFFB84A3A;
     private static final int SCROLL_SLOT_SIZE = 20;
     private static final int SCROLL_SLOT_COLUMNS = 9;
+    private static final int COLONY_MAP_SLOT_SIZE = 18;
+    private static final int COLONY_MAP_TEXT_GAP = 8;
     private static final int CANCEL_ACTION_WIDTH = 46;
     private static final int CANCEL_ACTION_PADDING = 4;
     private static final int CANCEL_ACTION_HORIZONTAL_PADDING = 5;
@@ -131,6 +141,7 @@ public class SmartClipboardScreen extends Screen {
     private static final int CANCEL_TEXT = 0xFF6C5948;
     private static final int CANCEL_HOVER_TEXT = 0xFF7A6654;
     private static final int CANCEL_OUTLINE = 0xFFB9A68D;
+    private static final boolean ENABLE_SMART_INFO_HOVER_DIAGNOSTIC_HOTKEY = false;
     private static final Pattern STANDARD_TOKEN_PATTERN = Pattern.compile("^StandardToken\\{id=([^}]+)}$");
     private SmartClipboardReport report;
     private SmartInfoResolver smartInfoResolver;
@@ -152,6 +163,9 @@ public class SmartClipboardScreen extends Screen {
     private int scrollbarDragOffset;
     private static Tab rememberedTab = Tab.REQUESTS;
     private static int rememberedSelectedScroll;
+    private static int rememberedScroll;
+    private static Set<Integer> rememberedExpanded = Set.of();
+    private static Set<String> rememberedExpandedDependencies = Set.of();
 
     public SmartClipboardScreen(SmartClipboardReport report) {
         this(report, false);
@@ -164,7 +178,10 @@ public class SmartClipboardScreen extends Screen {
         this.importantOnly = report.importantOnly();
         this.loading = loading;
         this.activeTab = rememberedTab;
+        this.scroll = rememberedScroll;
         this.selectedScroll = clampSelectedScroll(report, rememberedSelectedScroll);
+        this.expanded.addAll(rememberedExpanded);
+        this.expandedDependencies.addAll(rememberedExpandedDependencies);
     }
 
     @Override
@@ -181,11 +198,11 @@ public class SmartClipboardScreen extends Screen {
         renderStockKeeperPanel(graphics);
         renderPageTabs(graphics, mouseX, mouseY);
 
-        Component headerTitle = truncate(activeTab == Tab.REQUESTS
-                ? title
-                : Component.translatable("screen.create_colony_logistics.smart_clipboard.scrolls_title"), 196);
+        Component headerTitle = truncate(tabTitle(activeTab), 196);
         graphics.drawString(font, headerTitle, leftPos + (PANEL_WIDTH - font.width(headerTitle)) / 2, topPos + TITLE_Y, TITLE_TEXT, false);
-        graphics.drawString(font, truncate(Component.literal(displayedColonyName()), LIST_WIDTH), leftPos + LIST_X, topPos + COLONY_LINE_Y, SECONDARY_TEXT, false);
+        if (activeTab != Tab.COLONY_MAP) {
+            graphics.drawString(font, truncate(Component.literal(displayedColonyName()), LIST_WIDTH), leftPos + LIST_X, topPos + COLONY_LINE_Y, SECONDARY_TEXT, false);
+        }
         if (!loading) {
             renderImportantToggle(graphics, mouseX, mouseY);
         }
@@ -195,7 +212,8 @@ public class SmartClipboardScreen extends Screen {
 
         int listTop = listTop();
         int listBottom = listBottom();
-        graphics.fill(leftPos + LIST_X, listTop - 3, leftPos + LIST_X + LIST_WIDTH, listTop - 2, DIVIDER_LINE);
+        int dividerY = activeTab == Tab.COLONY_MAP ? listTop : listTop - 3;
+        graphics.fill(leftPos + LIST_X, dividerY, leftPos + LIST_X + LIST_WIDTH, dividerY + 1, DIVIDER_LINE);
         scroll = clampScroll(scroll, listTop, listBottom);
         if (activeTab == Tab.SCROLLS && !loading) {
             renderScrollStorageGrid(graphics);
@@ -205,7 +223,9 @@ public class SmartClipboardScreen extends Screen {
                 ? renderLoadingMessage(graphics, listTop)
                 : activeTab == Tab.REQUESTS
                 ? renderEntries(graphics, mouseX, mouseY, listTop, listBottom)
-                : renderScrollDetails(graphics, listTop);
+                : activeTab == Tab.SCROLLS
+                ? renderScrollDetails(graphics, listTop)
+                : renderColonyMapDetails(graphics, listTop);
         graphics.disableScissor();
 
         scroll = clampScroll(scroll, listTop, listBottom);
@@ -227,6 +247,9 @@ public class SmartClipboardScreen extends Screen {
                 || renderHoveredScrollResourceTooltip(graphics, mouseX, mouseY, listTop))) {
             return;
         }
+        if (activeTab == Tab.COLONY_MAP && renderHoveredColonyMapTooltip(graphics, mouseX, mouseY)) {
+            return;
+        }
         if (activeTab == Tab.REQUESTS && !renderHoveredItemTooltip(graphics, mouseX, mouseY, listTop)) {
             if (!renderHoveredTreeItemTooltip(graphics, mouseX, mouseY, listTop)) {
                 renderHoveredOverflowTooltip(graphics, mouseX, mouseY, listTop);
@@ -235,8 +258,9 @@ public class SmartClipboardScreen extends Screen {
     }
 
     private void renderPageTabs(GuiGraphics graphics, int mouseX, int mouseY) {
-        renderPageTab(graphics, Tab.REQUESTS, tabX(Tab.REQUESTS), tabY());
-        renderPageTab(graphics, Tab.SCROLLS, tabX(Tab.SCROLLS), tabY());
+        for (Tab tab : Tab.values()) {
+            renderPageTab(graphics, tab, tabX(tab), tabY());
+        }
     }
 
     private void renderPageTab(GuiGraphics graphics, Tab tab, int x, int y) {
@@ -244,7 +268,15 @@ public class SmartClipboardScreen extends Screen {
         if (active) {
             drawTabOutline(graphics, x, y);
         }
-        graphics.renderItem(tabIcon(tab), x + TAB_ICON_PADDING, y + TAB_ICON_PADDING);
+        ItemStack icon = tabIcon(tab);
+        int iconX = x + TAB_ICON_PADDING;
+        int iconY = y + TAB_ICON_PADDING;
+        graphics.renderItem(icon, iconX, iconY);
+        if (tab == Tab.REQUESTS) {
+            renderClipboardNotificationOverlay(graphics, icon, iconX, iconY);
+        } else if (tab == Tab.COLONY_MAP && !report.colonyMap().isEmpty()) {
+            renderColonyMapNotificationOverlay(graphics, icon, iconX, iconY);
+        }
     }
 
     private void drawTabOutline(GuiGraphics graphics, int x, int y) {
@@ -270,18 +302,39 @@ public class SmartClipboardScreen extends Screen {
                     .map(ItemStack::new)
                     .orElse(ItemStack.EMPTY);
         }
-        return BuiltInRegistries.ITEM.getOptional(RESOURCE_SCROLL_ID)
+        if (tab == Tab.SCROLLS) {
+            return BuiltInRegistries.ITEM.getOptional(RESOURCE_SCROLL_ID)
+                    .map(ItemStack::new)
+                    .orElse(ItemStack.EMPTY);
+        }
+        if (!report.colonyMap().isEmpty()) {
+            return report.colonyMap();
+        }
+        return BuiltInRegistries.ITEM.getOptional(COLONY_MAP_ID)
                 .map(ItemStack::new)
                 .orElse(ItemStack.EMPTY);
     }
 
     private String tabTooltip(Tab tab) {
-        return tab == Tab.REQUESTS ? "Smart Clipboard Tab" : "Smart Resource Tab";
+        return switch (tab) {
+            case REQUESTS -> "Smart Clipboard Tab";
+            case SCROLLS -> "Smart Resource Tab";
+            case COLONY_MAP -> "Smart Colony Map";
+        };
+    }
+
+    private Component tabTitle(Tab tab) {
+        return switch (tab) {
+            case REQUESTS -> title;
+            case SCROLLS -> Component.translatable("screen.create_colony_logistics.smart_clipboard.scrolls_title");
+            case COLONY_MAP -> Component.literal("Smart Colony Map");
+        };
     }
 
     private int tabX(Tab tab) {
-        int center = leftPos + PANEL_WIDTH / 2;
-        return tab == Tab.REQUESTS ? center - TAB_WIDTH - 3 : center + 3;
+        int groupWidth = Tab.values().length * TAB_WIDTH + (Tab.values().length - 1) * TAB_GAP;
+        int groupLeft = leftPos + (PANEL_WIDTH - groupWidth) / 2;
+        return groupLeft + tab.ordinal() * (TAB_WIDTH + TAB_GAP);
     }
 
     private int tabY() {
@@ -391,6 +444,39 @@ public class SmartClipboardScreen extends Screen {
         return Math.max(0, y - (listTop - scroll));
     }
 
+    private int renderColonyMapDetails(GuiGraphics graphics, int listTop) {
+        int textY = colonyMapNameY();
+        int slotX = colonyMapSlotX();
+        int slotY = colonyMapSlotY();
+        ItemStack colonyMap = report.colonyMap();
+        Component status = colonyMap.isEmpty()
+                ? Component.literal("No colony map linked.")
+                : Component.literal(colonyMapColonyName(colonyMap));
+        Component shownStatus = truncate(status, LIST_WIDTH);
+        graphics.drawString(font, shownStatus, leftPos + LIST_X + (LIST_WIDTH - font.width(shownStatus)) / 2, textY, MUTED_TEXT, false);
+        if (colonyMap.isEmpty()) {
+            renderColonyMapSlot(graphics, slotX, slotY, ItemStack.EMPTY);
+            return LINE_HEIGHT + COLONY_MAP_TEXT_GAP + COLONY_MAP_SLOT_SIZE;
+        }
+
+        renderColonyMapSlot(graphics, slotX, slotY, colonyMap);
+        return LINE_HEIGHT + COLONY_MAP_TEXT_GAP + COLONY_MAP_SLOT_SIZE;
+    }
+
+    private void renderColonyMapSlot(GuiGraphics graphics, int x, int y, ItemStack colonyMap) {
+        graphics.fill(x, y, x + COLONY_MAP_SLOT_SIZE, y + COLONY_MAP_SLOT_SIZE, 0x805E5A52);
+        graphics.fill(x, y, x + COLONY_MAP_SLOT_SIZE, y + 1, DIVIDER_LINE);
+        graphics.fill(x, y + COLONY_MAP_SLOT_SIZE - 1, x + COLONY_MAP_SLOT_SIZE, y + COLONY_MAP_SLOT_SIZE, DIVIDER_LINE);
+        graphics.fill(x, y, x + 1, y + COLONY_MAP_SLOT_SIZE, DIVIDER_LINE);
+        graphics.fill(x + COLONY_MAP_SLOT_SIZE - 1, y, x + COLONY_MAP_SLOT_SIZE, y + COLONY_MAP_SLOT_SIZE, DIVIDER_LINE);
+        if (colonyMap.isEmpty()) {
+            graphics.drawString(font, "+", x + 6, y + 5, MUTED_TEXT, false);
+            return;
+        }
+        graphics.renderItem(colonyMap, x + 1, y + 1);
+        renderColonyMapNotificationOverlay(graphics, colonyMap, x + 1, y + 1);
+    }
+
     private int renderSelectedScrollFromClientStack(GuiGraphics graphics, ItemStack selectedClientScroll, int x, int y) {
         ResourceScrollContent content = buildClientResourceScrollRows(selectedClientScroll);
         if (!content.error().isBlank()) {
@@ -485,6 +571,23 @@ public class SmartClipboardScreen extends Screen {
     private String resourceScrollColonyName(ItemStack scroll) {
         IColonyView colony = ColonyId.readColonyViewFromItemStack(scroll);
         return colony == null ? "" : colony.getName();
+    }
+
+    private String colonyMapColonyName(ItemStack colonyMap) {
+        IColonyView colony = ColonyId.readColonyViewFromItemStack(colonyMap);
+        return colony == null ? colonyMap.getHoverName().getString() : colony.getName();
+    }
+
+    private int colonyMapSlotX() {
+        return leftPos + LIST_X + (LIST_WIDTH - COLONY_MAP_SLOT_SIZE) / 2;
+    }
+
+    private int colonyMapSlotY() {
+        return colonyMapNameY() + LINE_HEIGHT + COLONY_MAP_TEXT_GAP;
+    }
+
+    private int colonyMapNameY() {
+        return listTop(Tab.COLONY_MAP) + 1 + COLONY_MAP_NAME_TOP_GAP - scroll;
     }
 
     private String sanitizeScrollLine(String value) {
@@ -688,6 +791,9 @@ public class SmartClipboardScreen extends Screen {
             }
             return handleScrollClick(mouseX, mouseY, button);
         }
+        if (activeTab == Tab.COLONY_MAP) {
+            return handleColonyMapClick(mouseX, mouseY, button);
+        }
         if (handleScrollbarClick(mouseX, mouseY, button)) {
             return true;
         }
@@ -720,7 +826,7 @@ public class SmartClipboardScreen extends Screen {
     @Override
     public boolean keyPressed(int keyCode, int scanCode, int modifiers) {
         // DIAGNOSTIC ONLY - remove after Cutter recipe source-truth audit
-        if (keyCode == GLFW.GLFW_KEY_F9 && Screen.hasControlDown()) {
+        if (ENABLE_SMART_INFO_HOVER_DIAGNOSTIC_HOTKEY && keyCode == GLFW.GLFW_KEY_F9 && Screen.hasControlDown()) {
             return sendRecipeDiagnosticForHover(lastMouseX, lastMouseY);
         }
         return super.keyPressed(keyCode, scanCode, modifiers);
@@ -739,6 +845,7 @@ public class SmartClipboardScreen extends Screen {
         }
         PacketDistributor.sendToServer(new ServerboundSmartInfoRecipeDiagnosticPacket(
                 target.get().stack().copy(),
+                report,
                 target.get().context(),
                 target.get().hoverPath(),
                 target.get().directEntryIndex(),
@@ -966,6 +1073,15 @@ public class SmartClipboardScreen extends Screen {
             scroll = 0;
             return true;
         }
+        if (tabHit(mouseX, mouseY, tabX(Tab.COLONY_MAP), tabY())) {
+            if (activeTab != Tab.COLONY_MAP) {
+                playUiSound(SoundEvents.BOOK_PAGE_TURN, 0.35f, 1.10f);
+            }
+            activeTab = Tab.COLONY_MAP;
+            rememberState();
+            scroll = 0;
+            return true;
+        }
         return false;
     }
 
@@ -1036,6 +1152,44 @@ public class SmartClipboardScreen extends Screen {
             }
         }
         return false;
+    }
+
+    private boolean handleColonyMapClick(double mouseX, double mouseY, int button) {
+        int slotX = colonyMapSlotX();
+        int slotY = colonyMapSlotY();
+        if (mouseX < slotX || mouseX >= slotX + COLONY_MAP_SLOT_SIZE || mouseY < slotY || mouseY >= slotY + COLONY_MAP_SLOT_SIZE) {
+            return false;
+        }
+
+        ItemStack colonyMap = report.colonyMap();
+        if (colonyMap.isEmpty()) {
+            if (firstInventoryColonyMapStack().isEmpty()) {
+                showClientMessage(Component.literal("No colony map can be added."));
+                return true;
+            }
+            activeTab = Tab.COLONY_MAP;
+            rememberState();
+            playUiSound(SoundEvents.BUNDLE_INSERT, 0.25f, 1.00f);
+            PacketDistributor.sendToServer(new ServerboundSmartClipboardColonyMapPacket(ServerboundSmartClipboardColonyMapPacket.INSERT));
+            return true;
+        }
+
+        if (button == 1 || Screen.hasShiftDown()) {
+            if (!hasSpaceForReturnedMap(colonyMap)) {
+                return true;
+            }
+            activeTab = Tab.COLONY_MAP;
+            rememberState();
+            playUiSound(SoundEvents.BUNDLE_REMOVE_ONE, 0.25f, 1.00f);
+            PacketDistributor.sendToServer(new ServerboundSmartClipboardColonyMapPacket(ServerboundSmartClipboardColonyMapPacket.REMOVE));
+            return true;
+        }
+
+        activeTab = Tab.COLONY_MAP;
+        rememberState();
+        playUiSound(SoundEvents.UI_BUTTON_CLICK, 0.25f, 1.00f);
+        PacketDistributor.sendToServer(new ServerboundSmartClipboardColonyMapPacket(ServerboundSmartClipboardColonyMapPacket.OPEN));
+        return true;
     }
 
     private void openMineColoniesResourceScrollWindow(int slot, ItemStack selectedClientScroll) {
@@ -1241,6 +1395,20 @@ public class SmartClipboardScreen extends Screen {
         return ItemStack.EMPTY;
     }
 
+    private ItemStack firstInventoryColonyMapStack() {
+        Minecraft minecraft = Minecraft.getInstance();
+        if (minecraft.player == null) {
+            return ItemStack.EMPTY;
+        }
+        for (int i = 0; i < minecraft.player.getInventory().getContainerSize(); i++) {
+            ItemStack stack = minecraft.player.getInventory().getItem(i);
+            if (SmartClipboardColonyMapStorage.isColonyMap(stack)) {
+                return stack;
+            }
+        }
+        return ItemStack.EMPTY;
+    }
+
     private boolean hasSpaceForReturnedScroll(ItemStack returnedScroll) {
         Minecraft minecraft = Minecraft.getInstance();
         if (minecraft.player == null || returnedScroll.isEmpty()) {
@@ -1255,6 +1423,24 @@ public class SmartClipboardScreen extends Screen {
                 return true;
             }
         }
+        return false;
+    }
+
+    private boolean hasSpaceForReturnedMap(ItemStack returnedMap) {
+        Minecraft minecraft = Minecraft.getInstance();
+        if (minecraft.player == null || returnedMap.isEmpty()) {
+            return false;
+        }
+        for (int i = 0; i < minecraft.player.getInventory().getContainerSize(); i++) {
+            ItemStack stack = minecraft.player.getInventory().getItem(i);
+            if (stack.isEmpty()) {
+                return true;
+            }
+            if (ItemStack.isSameItemSameComponents(stack, returnedMap) && stack.getCount() < stack.getMaxStackSize()) {
+                return true;
+            }
+        }
+        showClientMessage(Component.literal("Inventory full."));
         return false;
     }
 
@@ -1395,6 +1581,86 @@ public class SmartClipboardScreen extends Screen {
             }
         }
         return false;
+    }
+
+    private boolean renderHoveredColonyMapTooltip(GuiGraphics graphics, int mouseX, int mouseY) {
+        int slotX = colonyMapSlotX();
+        int slotY = colonyMapSlotY();
+        if (mouseX < slotX || mouseX >= slotX + COLONY_MAP_SLOT_SIZE || mouseY < slotY || mouseY >= slotY + COLONY_MAP_SLOT_SIZE) {
+            return false;
+        }
+        ItemStack colonyMap = report.colonyMap();
+        if (colonyMap.isEmpty()) {
+            graphics.renderTooltip(font, Component.literal("No colony map linked."), mouseX, mouseY);
+            return true;
+        }
+        Item.TooltipContext context = minecraft.level == null ? Item.TooltipContext.EMPTY : Item.TooltipContext.of(minecraft.level);
+        graphics.renderTooltip(font, colonyMap.getTooltipLines(context, minecraft.player, TooltipFlag.NORMAL), colonyMap.getTooltipImage(), mouseX, mouseY);
+        return true;
+    }
+
+    private void renderColonyMapNotificationOverlay(GuiGraphics graphics, ItemStack colonyMap, int x, int y) {
+        int count = colonyMapNotificationCount(colonyMap);
+        renderNotificationOverlay(graphics, count, x, y);
+    }
+
+    private void renderClipboardNotificationOverlay(GuiGraphics graphics, ItemStack icon, int x, int y) {
+        ItemStack clipboard = currentSmartClipboardStack();
+        int count = clipboard.isEmpty() ? 0 : SmartColonyClipboardDecorator.pendingRequestCount(clipboard);
+        renderNotificationOverlay(graphics, count, x, y);
+    }
+
+    private void renderNotificationOverlay(GuiGraphics graphics, int count, int x, int y) {
+        if (count <= 0) {
+            return;
+        }
+        graphics.pose().pushPose();
+        graphics.pose().translate(0.0F, 0.0F, 500.0F);
+        graphics.drawCenteredString(font, Component.literal(Integer.toString(count)),
+                x + SmartColonyClipboardDecorator.COUNT_X_OFFSET,
+                y + SmartColonyClipboardDecorator.COUNT_Y_OFFSET,
+                SmartClipboardPulse.pulsingCountColor());
+        graphics.pose().popPose();
+    }
+
+    private ItemStack currentSmartClipboardStack() {
+        Minecraft minecraft = Minecraft.getInstance();
+        if (minecraft.player == null) {
+            return ItemStack.EMPTY;
+        }
+        ItemStack main = minecraft.player.getMainHandItem();
+        if (main.is(CCLItems.SMART_COLONY_CLIPBOARD.get())) {
+            return main;
+        }
+        ItemStack offhand = minecraft.player.getOffhandItem();
+        if (offhand.is(CCLItems.SMART_COLONY_CLIPBOARD.get())) {
+            return offhand;
+        }
+        for (int i = 0; i < minecraft.player.getInventory().getContainerSize(); i++) {
+            ItemStack stack = minecraft.player.getInventory().getItem(i);
+            if (stack.is(CCLItems.SMART_COLONY_CLIPBOARD.get())) {
+                return stack;
+            }
+        }
+        return ItemStack.EMPTY;
+    }
+
+    private static int colonyMapNotificationCount(ItemStack colonyMap) {
+        IColonyView colonyView = ColonyId.readColonyViewFromItemStack(colonyMap);
+        if (colonyView == null) {
+            return 0;
+        }
+        try {
+            int count = 0;
+            for (ICitizenDataView citizen : colonyView.getCitizens().values()) {
+                if (citizen.hasBlockingInteractions()) {
+                    count++;
+                }
+            }
+            return count;
+        } catch (RuntimeException ignored) {
+            return 0;
+        }
     }
 
     private boolean renderHoveredScrollResourceTooltip(GuiGraphics graphics, int mouseX, int mouseY, int listTop) {
@@ -1936,6 +2202,10 @@ public class SmartClipboardScreen extends Screen {
         selectedScroll = clampSelectedScroll(report, selectedScroll);
     }
 
+    void preserveStateForReturn() {
+        rememberState();
+    }
+
     public void setLoading() {
         this.loading = true;
         this.scroll = 0;
@@ -1983,7 +2253,11 @@ public class SmartClipboardScreen extends Screen {
     }
 
     private int listTop(Tab tab) {
-        return topPos + (tab == Tab.SCROLLS ? SCROLL_DETAILS_TOP : CONTENT_LIST_TOP);
+        return topPos + switch (tab) {
+            case SCROLLS -> SCROLL_DETAILS_TOP;
+            case COLONY_MAP -> COLONY_MAP_CONTENT_TOP;
+            case REQUESTS -> CONTENT_LIST_TOP;
+        };
     }
 
     private int listBottom() {
@@ -2037,6 +2311,9 @@ public class SmartClipboardScreen extends Screen {
     private void rememberState() {
         rememberedTab = activeTab;
         rememberedSelectedScroll = selectedScroll;
+        rememberedScroll = scroll;
+        rememberedExpanded = Set.copyOf(expanded);
+        rememberedExpandedDependencies = Set.copyOf(expandedDependencies);
     }
 
     private ItemStack displayStack(SmartClipboardReport.Entry entry) {
@@ -2215,7 +2492,8 @@ public class SmartClipboardScreen extends Screen {
 
     private enum Tab {
         REQUESTS,
-        SCROLLS
+        SCROLLS,
+        COLONY_MAP
     }
 
     // DIAGNOSTIC ONLY - remove after Cutter recipe source-truth audit

@@ -3,6 +3,7 @@ package com.createcolonylogistics.item;
 import com.createcolonylogistics.clipboard.ColonyContextResolver;
 import com.createcolonylogistics.clipboard.RequestAnalysisService;
 import com.createcolonylogistics.clipboard.SmartClipboardFilterState;
+import com.createcolonylogistics.clipboard.SmartClipboardColonyMapStorage;
 import com.createcolonylogistics.clipboard.SmartClipboardReport;
 import com.createcolonylogistics.clipboard.SmartClipboardScrollStorage;
 import com.createcolonylogistics.clipboard.SmartClipboardRecipeTeachingService;
@@ -93,7 +94,8 @@ public class SmartColonyClipboardItem extends Item {
             List<ItemStack> resourceScrolls = SmartClipboardScrollStorage.read(clipboard);
             RequestAnalysisService.AnalysisResult result = RequestAnalysisService.analyze(player.serverLevel(), colony.get(), MAX_REPORT_REQUESTS, resourceScrolls);
             PacketDistributor.sendToPlayer(player, new ClientboundSmartClipboardReportPacket(
-                    SmartClipboardReport.fromAnalysis(result, resourceScrolls, SmartClipboardFilterState.isImportantOnly(clipboard))
+                    SmartClipboardReport.fromAnalysis(result, resourceScrolls, SmartClipboardColonyMapStorage.read(clipboard),
+                            SmartClipboardFilterState.isImportantOnly(clipboard))
             ));
         } catch (RuntimeException exception) {
             player.sendSystemMessage(Component.translatable("item.create_colony_logistics.smart_colony_clipboard.no_colony"));
@@ -102,7 +104,8 @@ public class SmartColonyClipboardItem extends Item {
     }
 
     private static SmartClipboardReport emptyReport(ItemStack clipboard) {
-        return new SmartClipboardReport("", 0, 0, 0, false, SmartClipboardFilterState.isImportantOnly(clipboard), SmartClipboardScrollStorage.read(clipboard), List.of());
+        return new SmartClipboardReport("", 0, 0, 0, false, SmartClipboardFilterState.isImportantOnly(clipboard),
+                SmartClipboardScrollStorage.read(clipboard), SmartClipboardColonyMapStorage.read(clipboard), List.of());
     }
 
     private static void openLoadingClient() {
