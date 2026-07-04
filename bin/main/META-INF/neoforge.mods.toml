@@ -1,0 +1,42 @@
+modLoader="javafml"
+loaderVersion="[4,)"
+license="MIT"
+issueTrackerURL="https://github.com/create-colony-logistics/create-colony-logistics/issues"
+
+[[mods]]
+modId="create_colony_logistics"
+version="0.3.0-rc.33"
+displayName="Create: Colony Logistics"
+authors="Create: Colony Logistics contributors"
+description='''High-performance Create and MineColonies logistics integration for cached stock monitoring.'''
+
+[[mixins]]
+config="create_colony_logistics.mixins.json"
+
+[[dependencies.create_colony_logistics]]
+modId="neoforge"
+type="required"
+versionRange="[21.1.219,)"
+ordering="NONE"
+side="BOTH"
+
+[[dependencies.create_colony_logistics]]
+modId="minecraft"
+type="required"
+versionRange="[1.21.1,1.22)"
+ordering="NONE"
+side="BOTH"
+
+[[dependencies.create_colony_logistics]]
+modId="create"
+type="required"
+versionRange="[6.0.10,6.1.0)"
+ordering="AFTER"
+side="BOTH"
+
+[[dependencies.create_colony_logistics]]
+modId="minecolonies"
+type="required"
+versionRange="[1.1.1041-1.21.1,)"
+ordering="AFTER"
+side="BOTH"

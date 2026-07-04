@@ -6,7 +6,6 @@
   "mixins": [
     "FactoryPanelBehaviourMixin",
     "PackagerBlockEntityMixin",
-    "ThresholdSwitchBlockEntityMixin",
     "TileEntityColonyBuildingMixin"
   ],
   "injectors": {

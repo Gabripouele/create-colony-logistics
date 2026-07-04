@@ -55,9 +55,9 @@ configurations {
 
 dependencies {
     implementation "net.neoforged:neoforge:${neo_version}"
-    implementation "maven.modrinth:create:tS7ygzAE"
+    implementation "maven.modrinth:create:UjX6dr61"
     implementation "curse.maven:minecolonies-245506:6790456"
-    localRuntime "maven.modrinth:create:tS7ygzAE"
+    localRuntime "maven.modrinth:create:UjX6dr61"
     localRuntime "curse.maven:minecolonies-245506:6790456"
 }
 

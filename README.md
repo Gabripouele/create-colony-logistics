@@ -34,14 +34,14 @@ FactoryPanelBehaviour.tickStorageMonitor
 -> MineColonies CombinedItemHandler.getStackInSlot
 ```
 
-For display and monitoring, a short-lived summary is safe because Create is asking what appears to be available. Actual insertions and extractions still go through the real MineColonies handlers, so item movement remains authoritative. Create 6.0.6 exposes `InventorySummary.copy()`, and this addon uses it when returning cached summaries.
+For display and monitoring, a short-lived summary is safe because Create is asking what appears to be available. Actual insertions and extractions still go through the real MineColonies handlers, so item movement remains authoritative. Create 6.0.10 exposes `InventorySummary.copy()`, and this addon uses it when returning cached summaries.
 
 ## Supported Versions
 
 - Minecraft 1.21.1
-- NeoForge 21.1.172
+- NeoForge 21.1.219
 - Java 21
-- Create 6.0.6
+- Create 6.0.10
 - MineColonies 1.1.1041-1.21.1
 
 ## Unsupported Versions
@@ -49,7 +49,7 @@ For display and monitoring, a short-lived summary is safe because Create is aski
 - Forge builds
 - Fabric builds
 - Minecraft versions other than 1.21.1
-- Create versions outside the 6.0.6 target line unless explicitly tested
+- Create versions outside the 6.0.10 target line unless explicitly tested
 - MineColonies versions outside 1.1.1041-1.21.1 unless explicitly tested
 
 ## Configuration

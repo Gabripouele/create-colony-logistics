@@ -3,6 +3,7 @@ package com.createcolonylogistics;
 import com.mojang.logging.LogUtils;
 import com.createcolonylogistics.config.ColonyLogisticsConfig;
 import com.createcolonylogistics.cache.ColonyStockCache;
+import com.createcolonylogistics.cache.WarehouseStockpileSwitchCache;
 import com.createcolonylogistics.client.CCLClientEvents;
 import com.createcolonylogistics.network.CCLNetworking;
 import com.createcolonylogistics.registry.CCLDataComponents;
@@ -35,6 +36,8 @@ public final class CreateColonyLogistics {
     }
 
     private void onServerPostTick(ServerTickEvent.Post event) {
-        ColonyStockCache.INSTANCE.logStatsIfNeeded(event.getServer().overworld().getGameTime());
+        long gameTime = event.getServer().overworld().getGameTime();
+        ColonyStockCache.INSTANCE.logStatsIfNeeded(gameTime);
+        WarehouseStockpileSwitchCache.INSTANCE.logStatsIfNeeded(gameTime);
     }
 }

@@ -13,6 +13,14 @@ public final class ColonyLogisticsConfig {
             .comment("How long a cached MineColonies stock summary may be reused for display/monitoring reads.")
             .defineInRange("cacheTtlTicks", 40, 1, 20 * 60 * 10);
 
+    public static final ModConfigSpec.BooleanValue ENABLE_WAREHOUSE_STOCKPILE_SWITCH_ADAPTER = BUILDER
+            .comment("Uses a MineColonies-aware cached warehouse snapshot when Create Stockpile Switches target Warehouse hut blocks.")
+            .define("enableWarehouseStockpileSwitchAdapter", true);
+
+    public static final ModConfigSpec.IntValue WAREHOUSE_STOCKPILE_CACHE_TTL_TICKS = BUILDER
+            .comment("How long a cached MineColonies Warehouse snapshot may be reused by Create Stockpile Switch adapters.")
+            .defineInRange("warehouseStockpileCacheTtlTicks", 40, 1, 20 * 60 * 10);
+
     public static final ModConfigSpec.IntValue SMART_CLIPBOARD_PRODUCTION_CACHE_TTL_TICKS = BUILDER
             .comment("How long Smart Clipboard global production fallback data may be reused between report opens.")
             .defineInRange("smartClipboardProductionCacheTtlTicks", 100, 1, 20 * 60 * 10);
