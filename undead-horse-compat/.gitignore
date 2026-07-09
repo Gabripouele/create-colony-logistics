@@ -1,0 +1,13 @@
+.gradle/
+build/
+run/
+out/
+*.log
+*.iml
+.idea/
+.vscode/
+
+runs/qa-client/*
+!runs/qa-client/mods/
+runs/qa-client/mods/*
+!runs/qa-client/mods/.gitkeep
