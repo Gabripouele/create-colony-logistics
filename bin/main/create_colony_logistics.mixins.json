@@ -5,7 +5,9 @@
   "compatibilityLevel": "JAVA_21",
   "mixins": [
     "FactoryPanelBehaviourMixin",
+    "InvManipulationBehaviourMixin",
     "PackagerBlockEntityMixin",
+    "ThresholdSwitchBlockEntityMixin",
     "TileEntityColonyBuildingMixin"
   ],
   "injectors": {

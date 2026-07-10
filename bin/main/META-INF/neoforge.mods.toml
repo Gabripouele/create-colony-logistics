@@ -5,7 +5,7 @@ issueTrackerURL="https://github.com/create-colony-logistics/create-colony-logist
 
 [[mods]]
 modId="create_colony_logistics"
-version="0.3.0-rc.33"
+version="0.3.6"
 displayName="Create: Colony Logistics"
 authors="Create: Colony Logistics contributors"
 description='''High-performance Create and MineColonies logistics integration for cached stock monitoring.'''
@@ -16,7 +16,7 @@ config="create_colony_logistics.mixins.json"
 [[dependencies.create_colony_logistics]]
 modId="neoforge"
 type="required"
-versionRange="[21.1.219,)"
+versionRange="[21.1.226,)"
 ordering="NONE"
 side="BOTH"
 
