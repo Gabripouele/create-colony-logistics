@@ -13,7 +13,7 @@ Create Colony Logistics connects Create logistics monitoring with MineColonies i
 - Java 21
 - Create 6.0.10 through the 6.0.x line (`[6.0.10,6.1.0)`)
 - MineColonies 1.1.1041 for Minecraft 1.21.1 through the compatible 1.1 line (`[1.1.1041-1.21.1,1.2.0)`)
-- Domum Ornamentum 1.0.220 through the compatible 1.0 line (`[1.0.220-snapshot-main,1.1.0)`)
+- Domum Ornamentum 1.0.220 through the compatible 1.0 line (`[1.0.220-snapshot,1.1.0)`)
 
 The mod must be installed on both the client and server. It supports single-player/integrated servers and dedicated servers. Forge, Fabric, other Minecraft versions, and dependency versions outside the declared ranges are unsupported.
 

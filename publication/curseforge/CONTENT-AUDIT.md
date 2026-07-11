@@ -21,7 +21,7 @@ The only current binary candidate is `build/libs/create_colony_logistics-0.3.6.j
 | Structurize | 1.0.782-1.21.1-snapshot | Complete QA modpack; transitive MineColonies requirement, not declared directly by this mod |
 | BlockUI | 1.0.205-1.21.1 | Complete QA modpack; transitive MineColonies requirement |
 | MultiPiston | 1.2.57-1.21.1 | Complete QA modpack; transitive MineColonies requirement |
-| Domum Ornamentum | 1.0.220-snapshot-main | Complete QA modpack; required for some Smart Info/Architect's Cutter data paths, but not declared directly |
+| Domum Ornamentum | 1.0.220-snapshot | Complete QA modpack artifact `domum-ornamentum-1.0.220-snapshot-main.jar`; required directly for Smart Info/Architect's Cutter data paths |
 | Java | 21 | Gradle toolchain and mixin compatibility level |
 | Mod version | 0.3.6 | Source and candidate metadata |
 | Mod ID | `create_colony_logistics` | Source and candidate metadata |
@@ -183,7 +183,7 @@ These optimizations are limited to the named integration points. They do not cla
 - Structurize: QA baseline 1.0.782-1.21.1-snapshot.
 - BlockUI: QA baseline 1.0.205-1.21.1.
 - MultiPiston: QA baseline 1.2.57-1.21.1.
-- Domum Ornamentum: QA baseline 1.0.220-snapshot-main; required for supported Architect's Cutter Smart Info paths, but not declared by this mod.
+- Domum Ornamentum: declared version 1.0.220-snapshot from QA artifact `domum-ornamentum-1.0.220-snapshot-main.jar`; directly required for supported Architect's Cutter Smart Info paths.
 - Optional dependencies declared by this mod: none.
 - Confirmed incompatible platforms: Forge and Fabric builds are unsupported by this NeoForge artifact.
 

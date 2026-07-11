@@ -90,10 +90,48 @@ tasks.withType(JavaCompile).configureEach {
     options.encoding = 'UTF-8'
 }
 
+tasks.withType(AbstractArchiveTask).configureEach {
+    preserveFileTimestamps = false
+    reproducibleFileOrder = true
+}
+
 tasks.named('jar', Jar).configure {
     from(rootProject.file('LICENSE')) {
         rename { 'LICENSE' }
     }
+}
+
+def releaseDirectory = layout.buildDirectory.dir("release/${mod_version}")
+
+tasks.register('releaseJar', Copy) {
+    dependsOn tasks.named('jar')
+    from tasks.named('jar').flatMap { it.archiveFile }
+    into releaseDirectory
+    rename { "${mod_id}-${mod_version}.jar" }
+}
+
+tasks.register('releaseChecksum') {
+    dependsOn tasks.named('releaseJar')
+    def releaseJarFile = releaseDirectory.map { it.file("${mod_id}-${mod_version}.jar") }
+    def checksumFile = releaseDirectory.map { it.file("${mod_id}-${mod_version}.jar.sha256") }
+    inputs.file releaseJarFile
+    outputs.file checksumFile
+    doLast {
+        def jarFile = releaseJarFile.get().asFile
+        def digest = java.security.MessageDigest.getInstance('SHA-256')
+        jarFile.withInputStream { input ->
+            byte[] buffer = new byte[8192]
+            for (int read = input.read(buffer); read != -1; read = input.read(buffer)) {
+                digest.update(buffer, 0, read)
+            }
+        }
+        def sha256 = digest.digest().encodeHex().toString()
+        checksumFile.get().asFile.text = "${sha256}  ${jarFile.name}\n"
+    }
+}
+
+tasks.register('releasePackage') {
+    dependsOn tasks.named('releaseChecksum')
 }
 
 publishing {
