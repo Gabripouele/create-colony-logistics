@@ -1,6 +1,0 @@
-# World Generation Audit
-
-Verified installed structure systems are Repurposed Structures 7.5.21, Create Structures Arise 175.48.47, YUNG's Better Desert Temples 4.1.5, Dungeons 5.1.4, End Island 3.1.2, Jungle Temples 3.1.2, Mineshafts 5.1.1, Nether Fortresses 3.1.5, and Strongholds 5.1.3. YUNG's API 5.1.6 and Structure Pool API 1.2.1 are supporting libraries. Firefly Bush, Naturalist, Friends & Foes, RPG village integrations, Gazebo village data, and several Create/content mods add features, spawns, pools, or loot.
-
-These are shared/server relevant and generally affect new chunks; structure templates and configured processors may place across chunk boundaries. Static presence proves participation, not density or cost. Existing chunks should not be called retrogen-capable without a retrogen implementation/config; none was verified. Interaction risk is highest where many structure sets target the same dimension/spacing regime. **Evidence:** exact JAR metadata, embedded datapack paths, YUNG configs and installed JSON/TOML. **Confidence:** high for participation, medium for stages, low for relative cost. **Runtime validation:** separate existing-terrain travel from new generation, record chunk-generation stages and structure starts in a disposable copied world.
-
