@@ -1,0 +1,28 @@
+# Local QA infrastructure and runtimes
+/qa/
+
+# Gradle and compiled output
+/.gradle/
+/build/
+/bin/
+/out/
+
+# Local Minecraft runtimes
+/run/
+/runs/
+
+# IDE and operating-system state
+/.idea/
+*.iml
+.classpath
+.project
+.settings/
+.vscode/
+.DS_Store
+Thumbs.db
+
+# Logs and temporary files
+*.log
+*.tmp
+*.bak
+.tmp-*
