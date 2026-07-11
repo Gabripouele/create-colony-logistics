@@ -73,9 +73,12 @@ tasks.withType(ProcessResources).configureEach {
             mod_license            : mod_license,
             mod_version            : mod_version,
             mod_authors            : mod_authors,
+            mod_credits            : mod_credits,
             mod_description        : mod_description,
             create_version         : create_version,
-            minecolonies_version   : minecolonies_version
+            minecolonies_version   : minecolonies_version,
+            minecolonies_version_range: minecolonies_version_range,
+            domum_ornamentum_version_range: domum_ornamentum_version_range
     ]
     inputs.properties replaceProperties
     filesMatching(['META-INF/neoforge.mods.toml', 'pack.mcmeta']) {
@@ -85,6 +88,12 @@ tasks.withType(ProcessResources).configureEach {
 
 tasks.withType(JavaCompile).configureEach {
     options.encoding = 'UTF-8'
+}
+
+tasks.named('jar', Jar).configure {
+    from(rootProject.file('LICENSE')) {
+        rename { 'LICENSE' }
+    }
 }
 
 publishing {

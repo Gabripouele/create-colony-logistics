@@ -1,108 +1,77 @@
-# Create: Colony Logistics
+# Create Colony Logistics
 
-Create: Colony Logistics is a NeoForge addon for Minecraft 1.21.1 that improves the performance of Create logistics monitoring when it reads MineColonies warehouse, rack, and building inventory handlers.
+*A Goldstein Industries Endeavor*
 
-It targets one expensive integration point: repeated Create stock-summary scans over MineColonies `CombinedItemHandler`. The mod keeps Create's monitoring behavior intact, but returns a short-lived cached `InventorySummary` for repeated read-only summary calls within the configured TTL window.
+Author: Gabripouele
 
-## What It Does
+Create Colony Logistics connects Create logistics monitoring with MineColonies inventory and request systems. Its primary player-facing tool is the Smart Colony Clipboard, while its server-side integration provides narrowly targeted caching and compatibility behavior for Create components reading MineColonies-managed inventories.
 
-- Caches Create `InventorySummary` results only when the backing inventory handler is MineColonies `CombinedItemHandler`.
-- Uses weak handler keys so unloaded inventories can be garbage-collected.
-- Uses identity-based handler keys so MineColonies handler equality cannot merge unrelated inventories.
-- Keeps cache entries separated per handler instance to avoid cross-colony contamination.
-- Falls back immediately to Create's original logic for every non-MineColonies handler.
-- Falls back immediately if cache lookup, copying, or storage fails.
-
-## What It Does Not Do
-
-- Does not reduce Create monitoring.
-- Does not remove factory gauges, stock links, packagers, or stock ticker behavior.
-- Does not cache insertion, extraction, crafting, package creation, or item movement.
-- Does not mutate MineColonies inventories from cached data.
-- Does not alter Create gameplay or MineColonies gameplay.
-
-## Why This Exists
-
-Create stock monitoring can ask packagers for available items frequently. With ordinary inventories this is usually cheap. MineColonies warehouse-style storage can expose a virtual combined inventory spanning many racks and building handlers, so each `CombinedItemHandler.getStackInSlot` pass can become expensive at colony scale.
-
-Spark profiling for the target case showed the hot path:
-
-```text
-FactoryPanelBehaviour.tickStorageMonitor
--> getLevelInStorage
--> PackagerBlockEntity.getAvailableItems
--> MineColonies CombinedItemHandler.getStackInSlot
-```
-
-For display and monitoring, a short-lived summary is safe because Create is asking what appears to be available. Actual insertions and extractions still go through the real MineColonies handlers, so item movement remains authoritative. Create 6.0.10 exposes `InventorySummary.copy()`, and this addon uses it when returning cached summaries.
-
-## Supported Versions
+## Supported baseline
 
 - Minecraft 1.21.1
-- NeoForge 21.1.219
+- NeoForge 21.1.226 or newer compatible 21.1 releases
 - Java 21
-- Create 6.0.10
-- MineColonies 1.1.1041-1.21.1
+- Create 6.0.10 through the 6.0.x line (`[6.0.10,6.1.0)`)
+- MineColonies 1.1.1041 for Minecraft 1.21.1 through the compatible 1.1 line (`[1.1.1041-1.21.1,1.2.0)`)
+- Domum Ornamentum 1.0.220 through the compatible 1.0 line (`[1.0.220-snapshot-main,1.1.0)`)
 
-## Unsupported Versions
-
-- Forge builds
-- Fabric builds
-- Minecraft versions other than 1.21.1
-- Create versions outside the 6.0.10 target line unless explicitly tested
-- MineColonies versions outside 1.1.1041-1.21.1 unless explicitly tested
-
-## Configuration
-
-Server config defaults:
-
-```toml
-enableMineColoniesSummaryCache = true
-cacheTtlTicks = 40
-debugLogging = false
-logCacheStatsIntervalTicks = 1200
-```
-
-Lower `cacheTtlTicks` for fresher display data. Raise it only if you understand the tradeoff: the cache affects monitoring summaries, not real movement, but longer TTLs can make displayed stock levels lag behind the colony inventory for longer.
+The mod must be installed on both the client and server. It supports single-player/integrated servers and dedicated servers. Forge, Fabric, other Minecraft versions, and dependency versions outside the declared ranges are unsupported.
 
 ## Smart Colony Clipboard
 
-The Smart Colony Clipboard is a read-only diagnostic item for MineColonies colonies using Domum Ornamentum Architect's Cutter outputs. Use it on a MineColonies hut/building, or use it while standing in a colony, to scan active colony requests and report relevant Domum Ornamentum requests in chat.
+The craftable Smart Colony Clipboard is separate from the normal MineColonies Clipboard. Shift-use it on a MineColonies Town Hall to link it explicitly to that colony.
 
-It currently reports requested item/count, warehouse stock when safely readable, the Domum Ornamentum output id, matching cutter recipe source when extractable, the exact stack/component fingerprint, and which compatible colony crafting modules already know or can likely learn the exact combo.
+Its custom screen provides:
 
-It does not teach recipes yet, add keybinds, open a custom GUI, alter worker AI, change Create logistics, or mutate MineColonies request/crafting data. A future version is planned to help teach exact Domum Ornamentum Architect's Cutter combos to compatible huts.
+- Up to 250 active colony requests with search and important-request filtering.
+- Requester, worker, position, warehouse availability, and expandable dependency-tree information.
+- Server-authorized request cancellation using MineColonies' `MANAGE_HUTS` permission.
+- Domum Ornamentum Architect's Cutter shape, material, recipe, production, and recipe-teaching information when resolvable.
+- Storage for up to 18 actual MineColonies Resource Scrolls, with linked builder-resource presentation.
+- Storage for one actual MineColonies Colony Map, with access to the MineColonies map interface.
 
-## Spark Testing
+The colony link, filter setting, stored Resource Scrolls, and stored Colony Map persist on the item. The last selected screen tab is remembered only for the current client session.
 
-1. Run the server without this addon.
-2. Start profiling:
-   ```text
-   /spark profiler start
-   ```
-3. Let normal colony and factory operation run.
-4. Stop profiling:
-   ```text
-   /spark profiler stop
-   ```
-5. Install this addon and repeat the same test.
-6. Compare time spent in:
-   - `FactoryPanelBehaviour.tickStorageMonitor`
-   - `PackagerBlockEntity.getAvailableItems`
-   - `CombinedItemHandler.getStackInSlot`
+## Create and MineColonies integration
 
-Expected result: repeated Create stock-summary reads against MineColonies `CombinedItemHandler` collapse into cached reads within the TTL window, reducing server-thread time while preserving automation behavior.
+The server-side integration is limited to established Create/MineColonies interaction points:
 
-## Compatibility Reports
+- Short-lived, copied Create inventory summaries for MineColonies combined inventory handlers.
+- Fresh cached counts for compatible restocking Factory Panels.
+- Warehouse threshold snapshots for Stockpile Switches aimed at MineColonies Warehouse huts.
+- Packager and building-handler compatibility behavior.
+- A targeted Funnel/inventory-extraction guard for malformed component data.
 
-When reporting issues, include:
+Actual insertion, extraction, inventory mutation, and request mutation remain server-authoritative. Ordinary non-MineColonies inventories fall back to Create's normal behavior.
 
-- Minecraft, NeoForge, Create, and MineColonies versions
-- Full latest.log or crash report
-- Spark profiler links when reporting performance
-- A description of the MineColonies storage setup
-- Number and type of Create logistics monitors involved
+## Installation
 
-## Distribution Description
+1. Install the supported NeoForge, Create, MineColonies, and Domum Ornamentum versions and MineColonies' required dependencies.
+2. Place the same Create Colony Logistics JAR in the `mods` directory of every client and server using the world.
+3. Start the game or server and verify that Create Colony Logistics appears in the mod list.
 
-Create: Colony Logistics is a performance-focused Create and MineColonies integration addon. It preserves Create logistics monitoring while reducing repeated expensive scans of MineColonies virtual combined inventories by caching read-only stock summaries for a short configurable TTL. Insertion, extraction, package creation, and MineColonies storage behavior remain untouched.
+Back up existing worlds before adding or removing any mod. Removing Create Colony Logistics is not guaranteed to be consequence-free because worlds and player inventories may contain its registered item and persistent data components.
+
+## Server configuration
+
+NeoForge stores the per-world configuration in `serverconfig/create_colony_logistics-server.toml`.
+
+| Key | Default | Range | Effect |
+|---|---:|---:|---|
+| `enableMineColoniesSummaryCache` | `true` | Boolean | Enables read-only Create summary caching for MineColonies combined handlers. |
+| `cacheTtlTicks` | `40` | 1–12,000 | Maximum age of a cached inventory summary. |
+| `enableWarehouseStockpileSwitchAdapter` | `true` | Boolean | Enables the MineColonies Warehouse Stockpile Switch adapter. |
+| `warehouseStockpileCacheTtlTicks` | `40` | 1–12,000 | Maximum age of a warehouse threshold snapshot. |
+| `smartClipboardProductionCacheTtlTicks` | `100` | 1–12,000 | Reuse period for Smart Clipboard production fallback data. |
+| `debugLogging` | `false` | Boolean | Enables additional production cache diagnostics. |
+| `logCacheStatsIntervalTicks` | `1200` | 0–72,000 | Cache-stat logging interval when debug logging is enabled; 0 disables it. |
+
+Restart the world or server after changing configuration unless the active NeoForge environment has explicitly confirmed live reload behavior.
+
+## Project links
+
+- Source: https://github.com/Gabripouele/create-colony-logistics
+- Issues: https://github.com/Gabripouele/create-colony-logistics/issues
+- License: [MIT](LICENSE)
+
+Create Colony Logistics is an independent addon. Create, MineColonies, and Domum Ornamentum are projects of their respective authors and contributors; their names are used only to identify compatibility and required dependencies, without implying ownership or endorsement.

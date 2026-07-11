@@ -19,12 +19,6 @@ public final class CCLNetworking {
                 ClientboundSmartColonyMapOpenPacket.STREAM_CODEC,
                 ClientboundSmartColonyMapOpenPacket::handle
         );
-        // DIAGNOSTIC ONLY - remove after Cutter recipe source-truth audit
-        registrar.playToServer(
-                ServerboundSmartInfoRecipeDiagnosticPacket.TYPE,
-                ServerboundSmartInfoRecipeDiagnosticPacket.STREAM_CODEC,
-                ServerboundSmartInfoRecipeDiagnosticPacket::handle
-        );
         registrar.playToServer(
                 ServerboundSmartClipboardScrollPacket.TYPE,
                 ServerboundSmartClipboardScrollPacket.STREAM_CODEC,

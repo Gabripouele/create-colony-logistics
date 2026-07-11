@@ -8,12 +8,9 @@ import com.createcolonylogistics.clipboard.SmartClipboardReport;
 import com.createcolonylogistics.clipboard.SmartClipboardScrollStorage;
 import com.createcolonylogistics.clipboard.SmartClipboardScrollStorage.ScrollLinkSnapshot;
 import com.createcolonylogistics.network.ServerboundSmartClipboardColonyMapPacket;
-import com.createcolonylogistics.network.ServerboundSmartClipboardDebugPacket;
 import com.createcolonylogistics.network.ServerboundSmartClipboardCancelPacket;
 import com.createcolonylogistics.network.ServerboundSmartClipboardFilterPacket;
 import com.createcolonylogistics.network.ServerboundSmartClipboardScrollPacket;
-import com.createcolonylogistics.network.ServerboundSmartInfoRecipeDiagnosticPacket;
-import com.createcolonylogistics.network.ServerboundSmartScrollDebugPacket;
 import com.createcolonylogistics.registry.CCLItems;
 import com.minecolonies.api.colony.IColonyView;
 import com.minecolonies.api.colony.ICitizenDataView;
@@ -51,7 +48,6 @@ import net.minecraft.world.item.ItemStack;
 import net.minecraft.world.item.TooltipFlag;
 import net.neoforged.neoforge.items.wrapper.InvWrapper;
 import net.neoforged.neoforge.network.PacketDistributor;
-import org.lwjgl.glfw.GLFW;
 
 import java.util.ArrayList;
 import java.util.Collection;
@@ -141,7 +137,6 @@ public class SmartClipboardScreen extends Screen {
     private static final int CANCEL_TEXT = 0xFF6C5948;
     private static final int CANCEL_HOVER_TEXT = 0xFF7A6654;
     private static final int CANCEL_OUTLINE = 0xFFB9A68D;
-    private static final boolean ENABLE_SMART_INFO_HOVER_DIAGNOSTIC_HOTKEY = false;
     private static final Pattern STANDARD_TOKEN_PATTERN = Pattern.compile("^StandardToken\\{id=([^}]+)}$");
     private SmartClipboardReport report;
     private SmartInfoResolver smartInfoResolver;
@@ -823,177 +818,6 @@ public class SmartClipboardScreen extends Screen {
         return super.mouseClicked(mouseX, mouseY, button);
     }
 
-    @Override
-    public boolean keyPressed(int keyCode, int scanCode, int modifiers) {
-        // DIAGNOSTIC ONLY - remove after Cutter recipe source-truth audit
-        if (ENABLE_SMART_INFO_HOVER_DIAGNOSTIC_HOTKEY && keyCode == GLFW.GLFW_KEY_F9 && Screen.hasControlDown()) {
-            return sendRecipeDiagnosticForHover(lastMouseX, lastMouseY);
-        }
-        return super.keyPressed(keyCode, scanCode, modifiers);
-    }
-
-    // DIAGNOSTIC ONLY - remove after Cutter recipe source-truth audit
-    private boolean sendRecipeDiagnosticForHover(int mouseX, int mouseY) {
-        if (loading) {
-            showClientMessage(Component.literal("Smart Info recipe diagnostic: report is still loading"));
-            return true;
-        }
-        Optional<DiagnosticTarget> target = hoveredRecipeDiagnosticTarget(mouseX, mouseY);
-        if (target.isEmpty()) {
-            showClientMessage(Component.literal("Smart Info recipe diagnostic: hover a request, tree, or resource item"));
-            return true;
-        }
-        PacketDistributor.sendToServer(new ServerboundSmartInfoRecipeDiagnosticPacket(
-                target.get().stack().copy(),
-                report,
-                target.get().context(),
-                target.get().hoverPath(),
-                target.get().directEntryIndex(),
-                target.get().parentEntryIndex(),
-                target.get().resourceKey(),
-                target.get().smartInfoKeys()
-        ));
-        showClientMessage(Component.literal("Smart Info recipe diagnostic requested for "
-                + target.get().stack().getHoverName().getString()));
-        return true;
-    }
-
-    // DIAGNOSTIC ONLY - remove after Cutter recipe source-truth audit
-    private Optional<DiagnosticTarget> hoveredRecipeDiagnosticTarget(int mouseX, int mouseY) {
-        if (activeTab == Tab.SCROLLS) {
-            return hoveredScrollResourceDiagnosticTarget(mouseX, mouseY, listTop());
-        }
-        Optional<DiagnosticTarget> request = hoveredRequestRowDiagnosticTarget(mouseX, mouseY, listTop());
-        return request.isPresent() ? request : hoveredTreeItemDiagnosticTarget(mouseX, mouseY, listTop());
-    }
-
-    // DIAGNOSTIC ONLY - remove after Cutter recipe source-truth audit
-    private Optional<DiagnosticTarget> hoveredRequestRowDiagnosticTarget(int mouseX, int mouseY, int listTop) {
-        if (mouseX < leftPos + LIST_X || mouseX >= leftPos + LIST_X + LIST_WIDTH
-                || mouseY < listTop || mouseY >= listBottom(Tab.REQUESTS)) {
-            return Optional.empty();
-        }
-        int x = leftPos + LIST_X;
-        int y = listTop - scroll;
-        for (int i : filteredEntryIndexes()) {
-            SmartClipboardReport.Entry entry = report.entries().get(i);
-            int cardHeight = entryHeight(entry, i);
-            if (mouseX >= x + 2 && mouseX < x + 18 && mouseY >= y + 4 && mouseY < y + 20) {
-                ItemStack stack = displayStack(entry);
-                if (!stack.isEmpty()) {
-                    String context = "request-row token=" + entry.requestToken().orElse("none")
-                            + " requester=" + displayRequester(entry);
-                    return Optional.of(new DiagnosticTarget(
-                            stack,
-                            context,
-                            "main-row",
-                            i,
-                            -1,
-                            "",
-                            List.of()
-                    ));
-                }
-            }
-            y += cardHeight + ROW_GAP;
-        }
-        return Optional.empty();
-    }
-
-    // DIAGNOSTIC ONLY - remove after Cutter recipe source-truth audit
-    private Optional<DiagnosticTarget> hoveredTreeItemDiagnosticTarget(int mouseX, int mouseY, int listTop) {
-        if (mouseX < leftPos + LIST_X || mouseX >= leftPos + LIST_X + LIST_WIDTH
-                || mouseY < listTop || mouseY >= listBottom(Tab.REQUESTS)) {
-            return Optional.empty();
-        }
-
-        int x = leftPos + LIST_X;
-        int y = listTop - scroll;
-        for (int i : filteredEntryIndexes()) {
-            SmartClipboardReport.Entry entry = report.entries().get(i);
-            int cardHeight = entryHeight(entry, i);
-            if (expanded.contains(i) && hasExpandedDetails(entry)) {
-                int detailY = expandedDetailStartY(entry, y);
-                detailY += valueLineHeight(entry.minimumStockRequest()
-                        ? Component.translatable("screen.create_colony_logistics.smart_clipboard.minimum_stock_request").getString()
-                        : null);
-                if (!entry.minimumStockRequest()) {
-                    detailY += valueLineHeight(entry.requestingWorkerName().orElse(null));
-                }
-                List<SmartClipboardReport.RequestTreeNode> dependencies = dependencyNodes(entry);
-                if (!dependencies.isEmpty()) {
-                    detailY += 2;
-                    for (int nodeIndex : visibleDependencyIndexes(entry, i)) {
-                        SmartClipboardReport.RequestTreeNode node = dependencies.get(nodeIndex);
-                        ItemStack stack = node.stack();
-                        if (!stack.isEmpty()) {
-                            int visibleDepth = Math.max(1, node.depth());
-                            int indent = Math.min(36, (visibleDepth - 1) * TREE_INDENT);
-                            int iconX = x + 4 + indent + 9;
-                            if (mouseX >= iconX && mouseX < iconX + 16 && mouseY >= detailY && mouseY < detailY + 16) {
-                                String context = "request-tree parentToken=" + entry.requestToken().orElse("none")
-                                        + " node=" + treeNodeText(node);
-                                return Optional.of(new DiagnosticTarget(
-                                        stack,
-                                        context,
-                                        "request-tree",
-                                        -1,
-                                        i,
-                                        "",
-                                        List.of()
-                                ));
-                            }
-                        }
-                        detailY += dependencyRowHeight(node);
-                    }
-                }
-            }
-            y += cardHeight + ROW_GAP;
-        }
-        return Optional.empty();
-    }
-
-    // DIAGNOSTIC ONLY - remove after Cutter recipe source-truth audit
-    private Optional<DiagnosticTarget> hoveredScrollResourceDiagnosticTarget(int mouseX, int mouseY, int listTop) {
-        if (mouseX < leftPos + LIST_X || mouseX >= leftPos + LIST_X + LIST_WIDTH
-                || mouseY < listTop || mouseY >= listBottom(Tab.SCROLLS)) {
-            return Optional.empty();
-        }
-        List<ItemStack> scrolls = report.resourceScrolls();
-        ItemStack selected = selectedScroll >= 0 && selectedScroll < scrolls.size() ? scrolls.get(selectedScroll) : ItemStack.EMPTY;
-        if (selected.isEmpty()) {
-            return Optional.empty();
-        }
-        ResourceScrollContent content = buildClientResourceScrollRows(selected);
-        if (!content.error().isBlank() || content.resources().isEmpty()) {
-            return Optional.empty();
-        }
-
-        int x = leftPos + LIST_X;
-        int y = listTop - scroll;
-        y += LINE_HEIGHT;
-        if (!content.projectTitle().isBlank()) {
-            y += LINE_HEIGHT;
-        }
-        y += LINE_HEIGHT + 3;
-
-        for (ResourceLine resource : content.resources()) {
-            if (mouseX >= x && mouseX < x + 16 && mouseY >= y && mouseY < y + 16 && !resource.stack().isEmpty()) {
-                String context = "resource-scroll row=" + resource.name() + " key=" + resource.resourceKey();
-                return Optional.of(new DiagnosticTarget(
-                        resource.stack(),
-                        context,
-                        "resource-scroll",
-                        -1,
-                        -1,
-                        resource.resourceKey(),
-                        resource.smartInfoKeys()
-                ));
-            }
-            y += RESOURCE_ROW_HEIGHT;
-        }
-        return Optional.empty();
-    }
-
     private boolean cancelEntry(SmartClipboardReport.Entry entry) {
         Optional<String> requestToken = entry.requestToken();
         if (requestToken.isEmpty() || pendingCancelledRequestTokens.contains(requestToken.get()) || cancelRequestsInFlight.contains(requestToken.get())) {
@@ -1227,147 +1051,9 @@ public class SmartClipboardScreen extends Screen {
                 buildingView == null ? "none" : buildingView.getClass().getName(),
                 opened,
                 failureReason);
-        showScrollDebugMessage(opened
+        showClientMessage(Component.literal(opened
                 ? "Smart Scroll parity test opened MineColonies Resource Scroll window for slot " + slot
-                : "Smart Scroll parity test failed for slot " + slot + ": " + failureReason);
-    }
-
-    private void dumpSelectedScrollDebug() {
-        List<ItemStack> scrolls = report.resourceScrolls();
-        ItemStack selected = selectedScroll >= 0 && selectedScroll < scrolls.size() ? scrolls.get(selectedScroll) : ItemStack.EMPTY;
-        if (selected.isEmpty()) {
-            CreateColonyLogistics.LOGGER.info("[SmartScrollDebug] no selected scroll activeTab={} selectedIndex={} storedScrolls={}",
-                    activeTab, selectedScroll, scrolls.size());
-            showScrollDebugMessage("Smart Scroll debug: no selected scroll");
-            PacketDistributor.sendToServer(new ServerboundSmartScrollDebugPacket(
-                    selectedScroll,
-                    "empty",
-                    0,
-                    false,
-                    ScrollLinkSnapshot.EMPTY,
-                    false,
-                    false,
-                    "none",
-                    false,
-                    false,
-                    "no selected scroll",
-                    0,
-                    0,
-                    0
-            ));
-            return;
-        }
-        ResourceScrollContent content = dumpSelectedScrollDebug(selectedScroll, selected);
-        ResolvedScrollBuilding resolved = ResourceScrollContent.resolveBuilderView(selected);
-        IBuildingView selectedView = resolved.building();
-        PacketDistributor.sendToServer(new ServerboundSmartScrollDebugPacket(
-                selectedScroll,
-                String.valueOf(BuiltInRegistries.ITEM.getKey(selected.getItem())),
-                selected.getCount(),
-                !selected.getComponentsPatch().isEmpty(),
-                ScrollLinkSnapshot.from(selected),
-                true,
-                selectedView != null,
-                selectedView == null ? "none" : selectedView.getClass().getName(),
-                selectedView instanceof BuildingBuilder.View,
-                content.error().isBlank() && !content.resources().isEmpty(),
-                content.error(),
-                content.moduleResourceCount(),
-                content.adaptedResourceCount(),
-                content.resources().size()
-        ));
-        showScrollDebugMessage("Smart Scroll debug dumped for slot " + selectedScroll + " (server dump requested)");
-    }
-
-    private ResourceScrollContent dumpSelectedScrollDebug(int slot, ItemStack scrollStack) {
-        ResourceScrollContent content = buildClientResourceScrollRows(scrollStack);
-        ColonyId colonyId = ColonyId.readFromItemStack(scrollStack);
-        BuildingId buildingId = BuildingId.readFromItemStack(scrollStack);
-        WarehouseSnapshot warehouseSnapshot = WarehouseSnapshot.readFromItemStack(scrollStack);
-        ResolvedScrollBuilding resolved = ResourceScrollContent.resolveBuilderView(scrollStack);
-        IBuildingView building = resolved.building();
-        BuildingResourcesModuleView module = building instanceof BuildingBuilder.View builder
-                ? builder.getModuleViewByType(BuildingResourcesModuleView.class)
-                : null;
-        ResourceLocation itemId = BuiltInRegistries.ITEM.getKey(scrollStack.getItem());
-        boolean hasComponents = !scrollStack.getComponentsPatch().isEmpty();
-
-        CreateColonyLogistics.LOGGER.info("[SmartScrollDebug] Selection: activeTab={} selectedIndex={} slot={} item={} count={} hasComponents={}",
-                activeTab, selectedScroll, slot, itemId, scrollStack.getCount(), hasComponents);
-        CreateColonyLogistics.LOGGER.info("[SmartScrollDebug] Components: hasColonyId={} colonyId={} dimension={} hasBuildingId={} buildingPos={} hasWarehouseSnapshot={} warehouseEntries={}",
-                colonyId.hasColonyId(), colonyId.id(), colonyId.dimension().location(), buildingId.hasId(), buildingId.id(),
-                !warehouseSnapshot.hash().isEmpty() || !warehouseSnapshot.snapshot().isEmpty(), warehouseSnapshot.snapshot().size());
-        CreateColonyLogistics.LOGGER.info("[SmartScrollDebug] RenderAuthority: renderAuthority=client serverPathAuthoritative=false selectedStackSource=client-selected-index");
-        CreateColonyLogistics.LOGGER.info("[SmartScrollDebug] ClientResolution: source={} clientViewResolved={} clientViewClass={} isBuildingBuilderView={} colonyView={} resourcesModuleFound={} workOrderId={} progress={}",
-                resolved.source(), building != null, building == null ? "none" : building.getClass().getName(), building instanceof BuildingBuilder.View,
-                building != null && building.getColony() != null, module != null, module == null ? "n/a" : module.getWorkOrderId(),
-                module == null ? "n/a" : module.getProgress());
-        CreateColonyLogistics.LOGGER.info("[SmartScrollDebug] ClientAdapter: entered=true resolutionSource={} moduleResources={} adaptedResources={} inventoryOverlay={} deliveryOverlay={} warehouseOverlay={} renderedRows={} invalidReason='{}'",
-                content.resolutionSource(),
-                content.moduleResourceCount(), content.adaptedResourceCount(), content.inventoryOverlayCount(),
-                content.deliveryOverlayCount(), content.warehouseOverlayCount(), content.resources().size(), content.error());
-        CreateColonyLogistics.LOGGER.info("[SmartScrollDebug] RenderPath: method=renderSelectedScrollFromClientStack renderAuthority=client oldTooltipSummary=false clientAdapterList={} invalidMessage={} bounds={}x{}+{},{}",
-                content.error().isBlank() && !content.resources().isEmpty(), !content.error().isBlank(), LIST_WIDTH,
-                listBottom(Tab.SCROLLS) - listTop(Tab.SCROLLS), leftPos + LIST_X, listTop(Tab.SCROLLS));
-        logHeldScrollComparison(scrollStack);
-        for (int i = 0; i < Math.min(5, content.resources().size()); i++) {
-            ResourceLine line = content.resources().get(i);
-            CreateColonyLogistics.LOGGER.info("[SmartScrollDebug] Row[{}]: name='{}' item={} needed={} available={} required={} deliveryOrWarehouse={} neededValueColor={} suppliedColor={}",
-                    i, line.name(), BuiltInRegistries.ITEM.getKey(line.stack().getItem()), line.missing(), line.available(),
-                    line.required(), line.deliveryOrWarehouseAmount(), line.neededValueColor(), line.suppliedColor());
-        }
-        return content;
-    }
-
-    private void logHeldScrollComparison(ItemStack selectedStack) {
-        ItemStack carriedScroll = firstInventoryResourceScrollStack();
-        if (carriedScroll.isEmpty()) {
-            CreateColonyLogistics.LOGGER.info("[SmartScrollDebug] StackCompare: no resource scroll found in player inventory for comparison");
-            return;
-        }
-        logScrollStackSnapshot("selected-client", selectedStack);
-        logScrollStackSnapshot("inventory-scroll", carriedScroll);
-
-        ColonyId selectedColony = ColonyId.readFromItemStack(selectedStack);
-        ColonyId inventoryColony = ColonyId.readFromItemStack(carriedScroll);
-        BuildingId selectedBuilding = BuildingId.readFromItemStack(selectedStack);
-        BuildingId inventoryBuilding = BuildingId.readFromItemStack(carriedScroll);
-        WarehouseSnapshot selectedWarehouse = WarehouseSnapshot.readFromItemStack(selectedStack);
-        WarehouseSnapshot inventoryWarehouse = WarehouseSnapshot.readFromItemStack(carriedScroll);
-        CreateColonyLogistics.LOGGER.info("[SmartScrollDebug] StackCompare: sameItem={} sameColony={} sameDimension={} sameBuilding={} sameWarehouseHash={} selectedPatch={} inventoryPatch={}",
-                selectedStack.getItem() == carriedScroll.getItem(),
-                selectedColony.id() == inventoryColony.id(),
-                selectedColony.dimension().equals(inventoryColony.dimension()),
-                selectedBuilding.id().equals(inventoryBuilding.id()),
-                selectedWarehouse.hash().equals(inventoryWarehouse.hash()),
-                selectedStack.getComponentsPatch(),
-                carriedScroll.getComponentsPatch());
-    }
-
-    private void logScrollStackSnapshot(String label, ItemStack stack) {
-        ColonyId colonyId = ColonyId.readFromItemStack(stack);
-        BuildingId buildingId = BuildingId.readFromItemStack(stack);
-        WarehouseSnapshot warehouseSnapshot = WarehouseSnapshot.readFromItemStack(stack);
-        IBuildingView buildingView = stack.isEmpty() ? null : BuildingId.readBuildingViewFromItemStack(stack);
-        CreateColonyLogistics.LOGGER.info("[SmartScrollDebug] Stack[{}]: item={} count={} hasComponents={} hasColonyId={} colonyId={} dimension={} hasBuildingId={} buildingPos={} hasWarehouseSnapshot={} warehouseEntries={} exactMineColoniesViewResolved={} viewClass={} isBuilderView={}",
-                label,
-                stack.isEmpty() ? "empty" : BuiltInRegistries.ITEM.getKey(stack.getItem()),
-                stack.getCount(),
-                !stack.getComponentsPatch().isEmpty(),
-                colonyId.hasColonyId(),
-                colonyId.id(),
-                colonyId.dimension().location(),
-                buildingId.hasId(),
-                buildingId.id(),
-                !warehouseSnapshot.hash().isEmpty() || !warehouseSnapshot.snapshot().isEmpty(),
-                warehouseSnapshot.snapshot().size(),
-                buildingView != null,
-                buildingView == null ? "none" : buildingView.getClass().getName(),
-                buildingView instanceof BuildingBuilder.View);
-    }
-
-    private void showScrollDebugMessage(String message) {
-        showClientMessage(Component.literal(message));
+                : "Smart Scroll parity test failed for slot " + slot + ": " + failureReason));
     }
 
     private void showClientMessage(Component message) {
@@ -1544,24 +1230,6 @@ public class SmartClipboardScreen extends Screen {
             y += cardHeight + ROW_GAP;
         }
         return false;
-    }
-
-    private void sendDebugDumpRequest(SmartClipboardReport.Entry entry) {
-        String token = entry.requestToken().orElse("");
-        if (token.isBlank()) {
-            return;
-        }
-        PacketDistributor.sendToServer(new ServerboundSmartClipboardDebugPacket(
-                token,
-                entry.requestedStack().getHoverName().getString(),
-                entry.quantityDisplay(),
-                displayRequester(entry),
-                entry.requestingWorkerName(),
-                entry.minimumStockRequest(),
-                hasExpandedDetails(entry),
-                expandableReason(entry),
-                dependencyNodes(entry).size()
-        ));
     }
 
     private boolean renderHoveredScrollTooltip(GuiGraphics graphics, int mouseX, int mouseY) {
@@ -2494,18 +2162,6 @@ public class SmartClipboardScreen extends Screen {
         REQUESTS,
         SCROLLS,
         COLONY_MAP
-    }
-
-    // DIAGNOSTIC ONLY - remove after Cutter recipe source-truth audit
-    private record DiagnosticTarget(
-            ItemStack stack,
-            String context,
-            String hoverPath,
-            int directEntryIndex,
-            int parentEntryIndex,
-            String resourceKey,
-            List<SmartClipboardReport.SmartInfoKey> smartInfoKeys
-    ) {
     }
 
     private record ResourceScrollContent(

@@ -8,6 +8,7 @@ import com.createcolonylogistics.clipboard.SmartClipboardFilterState;
 import com.createcolonylogistics.clipboard.SmartClipboardReport;
 import com.createcolonylogistics.clipboard.SmartClipboardScrollStorage;
 import com.minecolonies.api.colony.IColony;
+import com.minecolonies.api.colony.permissions.Action;
 import com.minecolonies.api.colony.requestsystem.request.IRequest;
 import com.minecolonies.api.colony.requestsystem.request.RequestState;
 import com.minecolonies.api.colony.requestsystem.token.IToken;
@@ -58,6 +59,13 @@ public record ServerboundSmartClipboardCancelPacket(String requestToken) impleme
             Optional<IColony> colony = ColonyContextResolver.resolveLinkedClipboard(clipboard.get());
             if (colony.isEmpty()) {
                 sendReport(player, clipboard.get(), Optional.empty(), packet.requestToken(), false);
+                return;
+            }
+
+            if (!colony.get().getPermissions().hasPermission(player, Action.MANAGE_HUTS)) {
+                player.sendSystemMessage(net.minecraft.network.chat.Component.translatable(
+                        "com.minecolonies.coremod.item.permissionscepter.permission.deny"));
+                sendReport(player, clipboard.get(), colony, packet.requestToken(), false);
                 return;
             }
 

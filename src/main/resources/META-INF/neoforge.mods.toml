@@ -1,13 +1,16 @@
 modLoader="javafml"
 loaderVersion="${loader_version_range}"
 license="${mod_license}"
-issueTrackerURL="https://github.com/create-colony-logistics/create-colony-logistics/issues"
+issueTrackerURL="https://github.com/Gabripouele/create-colony-logistics/issues"
 
 [[mods]]
 modId="${mod_id}"
 version="${mod_version}"
 displayName="${mod_name}"
 authors="${mod_authors}"
+credits="${mod_credits}"
+displayURL="https://github.com/Gabripouele/create-colony-logistics"
+logoFile="create_colony_logistics.png"
 description='''${mod_description}'''
 
 [[mixins]]
@@ -37,6 +40,13 @@ side="BOTH"
 [[dependencies.${mod_id}]]
 modId="minecolonies"
 type="required"
-versionRange="[${minecolonies_version},)"
+versionRange="${minecolonies_version_range}"
+ordering="AFTER"
+side="BOTH"
+
+[[dependencies.${mod_id}]]
+modId="domum_ornamentum"
+type="required"
+versionRange="${domum_ornamentum_version_range}"
 ordering="AFTER"
 side="BOTH"
